@@ -1,0 +1,1073 @@
+﻿Consultation 1
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic?
+Patient: I came in because of a persistent headache and, more recently, constant double vision.
+{ "presenting_complaint_description": { "value": "Persistent headache and constant double vision.", "required": true } }
+Agent: Has this ever happened before?
+Patient: No, I’ve had headaches before, but never one like this that doesn’t go away, and I’ve never had double vision.
+{ "previous_instances": { "value": false, "required": true } }
+Agent: I see. You mentioned constant double vision. Do you feel that you have any actual loss of vision, such as blurriness, black spots, or blind spots?
+Patient: No, my vision itself isn't blurry, but having two images is very confusing.
+{ "visual_loss_present": { "value": false, "required": true } }
+Agent: Are you experiencing any visual hallucinations?
+Patient: No, nothing like that.
+{ "hallucinations_present": { "value": false, "required": true } }
+Agent: Are you experiencing any problems with your colour vision?
+Patient: No.
+{ "cp_present": { "value": false, "required": true } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights?
+Patient: No.
+{ "vp_present": { "value": false, "required": true } }
+Agent: Do you have double vision (diplopia)?
+Patient: Yes, that is one of my main problems, as I mentioned. It’s been constant for about a week now.
+{ "dp_present": { "value": true, "required": true } }
+Agent: When did the double vision start?
+Patient: Roughly one week ago.
+{ "dp_onset": { "value": "one week ago", "required": "conditional" } }
+Agent: Does the double vision go away if you close one eye, or is it still there?
+Patient: If I close either eye, the double image disappears, which I find quite relieving.
+{ "dp_laterality": { "value": "binocular", "required": "conditional" } }
+Agent: Is it worse in any gaze direction?
+Patient: It is noticeable when I look straight ahead, but I think it gets worse when I try to look side to side.
+{ "dp_gaze_dependence": { "value": "worse on lateral gaze; constant when looking straight ahead", "required": "conditional" } }
+Agent: Do you feel dizzy or have vertigo?
+Patient: No, I don't feel dizzy.
+{ "vertigo_present": { "value": false, "required": true } }
+Agent: Any sensation of images or your eyes moving rapidly?
+Patient: No.
+{ "nystagmus_present": { "value": false, "required": true } }
+Agent: Are you experiencing a headache?
+Patient: Yes, it’s persistent.
+{ "h_present": { "value": true, "required": true } }
+Agent: Could you tell me a bit more about the headache?
+Patient: It's generalized, or diffuse, across my whole head, and it's gradually worsened over the last three weeks.
+{ "h_description": { "value": "Generalized, diffuse, gradually worsening pain", "required": "conditional" } }
+Agent: When did this headache start?
+Patient: Three weeks ago.
+{ "h_onset": { "value": "three weeks ago", "required": "conditional" } }
+Agent: Where is the headache located?
+Patient: It feels generalized across my head.
+{ "h_location": { "value": "Generalized or diffuse", "required": "conditional" } }
+Agent: Is it episodic, coming and going, or persistent and constant?
+Patient: It is persistent and constant, unfortunately.
+{ "h_temporal_pattern": { "value": "permanent", "required": "conditional" } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet?
+Patient: Yes, definitely. If I cough or strain during activities like heavy lifting, the pain gets much worse.
+{ "h_worse_on_straining": { "value": true, "required": "conditional" } }
+Agent: Is it worse at any time of day, like morning or evening?
+Patient: No, it seems constant throughout the day.
+{ "h_time_of_day": { "value": "none", "required": "conditional" } }
+Agent: Do you have eye pain?
+Patient: No.
+{ "ep_present": { "value": false, "required": true } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye?
+Patient: No, nothing like that.
+{ "dry_gritty_sensation": { "value": false } }
+Agent: Any change in the appearance of your eyes or surrounding areas?
+Patient: No, they look normal.
+{ "appearance_changes_present": { "value": false, "required": true } }
+Agent: For this episode, did you have any contact with a healthcare professional?
+Patient: No, I waited until I could schedule this appointment.
+{ "hc_contact_occurred": { "value": false, "required": true } }
+Agent: Any other associated symptoms that you haven't mentioned?
+Patient: I recently started taking an oral contraceptive pill, which I suppose is a new thing. Also, the headache is definitely not relieved by resting or sleeping.
+{ "other_symptoms": { "value": "Recently started an Oral Contraceptive Pill (OCP). Headache not relieved by rest/sleep.", "required": false } }
+Agent: How has this episode affected you?
+Patient: The headache and the double vision make it hard to focus on work and daily tasks.
+{ "functional_impact": { "value": "Difficulty focusing on work and daily tasks due to headache and double vision.", "required": true } }
+Consultation 2
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic?
+Patient: It's the vision in my right eye. It's gotten blurry and I've lost a lot of my central vision over the last two months.
+{ "presenting_complaint_description": { "value": "Loss of central vision and blurriness in the right eye, worsening over two months.", "required": true } }, { "visual_loss_present": { "value": true } }
+Agent: Has this ever happened before?
+Patient: No, this visual problem is entirely new.
+{ "previous_instances": { "value": false, "required": true } }
+Agent: I’m sorry to hear that it’s been impacting your vision. Could you tell me a bit more about the visual loss?
+Patient: It started as just a slight dull blur, but now it’s progressed to a marked loss of function right in the center of my sight.
+{ "vl_description": { "value": "Dull blur progressing to marked central visual function loss.", "required": "conditional" } }
+Agent: Can I ask if the vision is affected in both eyes or just one?
+Patient: Only my right eye.
+{ "vl_laterality": { "value": "monocular_right", "required": "conditional" } }
+Agent: And can you describe which part of the field of vision is affected?
+Patient: It’s the central part of my vision.
+{ "vl_field": { "value": "Central", "required": "conditional" } }
+Agent: At its worst, in the affected area, how much could you see?
+Patient: I would call it a partial loss; I can still see, but it’s severely hindered.
+{ "vl_degree": { "value": "partial", "required": "conditional" } }
+Agent: Could you describe what you could or couldn't see? For example, could you read fine print, count fingers, see hand movements?
+Patient: I can no longer read fine print at all with that eye.
+{ "vl_acuity_description": { "value": "Cannot read fine print.", "required": "conditional" } }
+Agent: When did this start?
+Patient: Approximately two months ago.
+{ "vl_onset": { "value": "two months ago", "required": "conditional" } }
+Agent: How quickly did it develop?
+Patient: It was a gradual progression over those two months, so I'd say chronic.
+{ "vl_onset_speed": { "value": "chronic", "required": "conditional" } }
+Agent: Is it constant or does it come and go?
+Patient: It came on and has been constant, just worsening slowly.
+{ "vl_temporal_pattern": { "value": "permanent", "required": "conditional" } }
+Agent: After it started, did it keep getting worse?
+Patient: Yes, it definitely worsened from a slight blur to a marked loss.
+{ "vl_worsening": { "value": true, "required": "conditional" } }
+Agent: Was it still worsening after 2 weeks?
+Patient: Yes, it has continued to worsen gradually throughout the entire two months.
+{ "vl_worsening_after_2_weeks": { "value": true, "required": "conditional" } }
+Agent: And at any point did it start to improve?
+Patient: No, it has only gotten worse.
+{ "vl_improved": { "value": false, "required": "conditional" } }
+Agent: Do you ever have brief blackouts in vision when you look around?
+Patient: No, it is a constant loss.
+{ "vl_blackouts": { "value": false, "required": "conditional" } }
+Agent: Is anything specific missing from your vision, or are you having difficulty recognising things, for example, certain things, people, or faces?
+Patient: No, I can still recognise everything fine, I just can’t see clearly.
+{ "agnosia_present": { "value": false, "required": true } }
+Agent: Are you experiencing any visual hallucinations?
+Patient: No.
+{ "hallucinations_present": { "value": false, "required": true } }
+Agent: Are you experiencing any problems with your colour vision?
+Patient: Yes, that’s another new symptom. The colors in my right eye look significantly less bright.
+{ "cp_present": { "value": true, "required": true } }
+Agent: When did this start?
+Patient: About five weeks ago.
+{ "cp_onset": { "value": "five weeks ago", "required": "conditional" } }
+Agent: Is the loss of colour just in one eye, or in both?
+Patient: Just in my right eye.
+{ "cp_laterality": { "value": "monocular", "required": "conditional" } }
+Agent: Is the loss of colour in one part of your field of vision, for example the left side of your vision or the upper half of your vision?
+Patient: No, it seems to affect the colors viewed by the entire right eye.
+{ "cp_field": { "value": "entire field of vision", "required": "conditional" } }
+Agent: Are any particular colours affected (e.g. red desaturation)?
+Patient: They just appear generally "washed out" or dull compared to my left eye.
+{ "cp_colours_affected": { "value": "Generally washed out/less bright", "required": "conditional" } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights?
+Patient: No.
+{ "vp_present": { "value": false, "required": true } }
+Agent: Do you have double vision (diplopia)?
+Patient: No, I only see one image at a time.
+{ "dp_present": { "value": false, "required": true } }
+Agent: Do you feel dizzy or have vertigo?
+Patient: No.
+{ "vertigo_present": { "value": false, "required": true } }
+Agent: Any sensation of images or your eyes moving rapidly?
+Patient: No.
+{ "nystagmus_present": { "value": false, "required": true } }
+Agent: Are you experiencing a headache?
+Patient: Yes, I have a mild, chronic headache that has been lingering for about two months. I had almost forgotten about it since it wasn't severe.
+{ "h_present": { "value": true, "required": true } }
+Agent: Could you tell me a bit more about the headache?
+Patient: It's generalized, low-grade, and dull.
+{ "h_description": { "value": "Mild, chronic, dull, generalized headache", "required": "conditional" } }
+Agent: When did this headache start?
+Patient: About two months ago.
+{ "h_onset": { "value": "two months ago", "required": "conditional" } }
+Agent: Where is the headache located?
+Patient: Generalized.
+{ "h_location": { "value": "Generalized", "required": "conditional" } }
+Agent: Is it episodic, coming and going, or persistent and constant?
+Patient: It's been persistent for the whole two months.
+{ "h_temporal_pattern": { "value": "permanent", "required": "conditional" } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet?
+Patient: I haven't noticed that association.
+{ "h_worse_on_straining": { "value": false, "required": "conditional" } }
+Agent: Is it worse at any time of day, like morning or evening?
+Patient: No, it’s just constantly there.
+{ "h_time_of_day": { "value": "none", "required": "conditional" } }
+Agent: Do you have eye pain?
+Patient: No.
+{ "ep_present": { "value": false, "required": true } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye?
+Patient: No.
+{ "dry_gritty_sensation": { "value": false } }
+Agent: Any change in the appearance of your eyes or surrounding areas?
+Patient: No.
+{ "appearance_changes_present": { "value": false, "required": true } }
+Agent: For this episode, did you have any contact with a healthcare professional?
+Patient: No, the headache was mild, and I thought the vision issue would resolve on its own.
+{ "hc_contact_occurred": { "value": false, "required": true } }
+Agent: Any other associated symptoms that you haven't mentioned?
+Patient: I do have a known blood clotting disorder called Factor V Leiden mutation.
+{ "other_symptoms": { "value": "Known diagnosis of Factor V Leiden mutation (inherited thrombophilia).", "required": false } }
+Agent: How has this episode affected you?
+Patient: The vision loss has severely hindered my ability to read fine print, which is necessary for my work.
+{ "functional_impact": { "value": "Severe hindrance to reading fine print and performing work duties.", "required": true } }
+Agent: Since you have chronic visual symptoms, I must ask you a few more specific questions. Have you noticed any change in your appearance, like your face, hands, or feet growing larger?
+Patient: No, I haven't.
+{ "acromegalic_features": { "value": false, "required": "conditional" } }
+Agent: Do you have any nipple discharge?
+Patient: No.
+{ "nipple_discharge": { "value": false, "required": "conditional" } }
+Agent: Have you experienced erectile dysfunction?
+Patient: No.
+{ "erectile_dysfunction": { "value": false, "required": "conditional" } }
+Agent: Have you noticed any breast growth or enlargement?
+Patient: No.
+{ "breast_growth": { "value": false, "required": "conditional" } }
+Agent: Do you feel hot or cold all the time?
+Patient: No, my temperature tolerance seems normal.
+{ "temperature_intolerance": { "value": false, "required": "conditional" } }
+Agent: Do you have any dietary restrictions, digestive issues, or have you had stomach or gut surgery?
+Patient: I have a standard diet and no digestive problems or surgeries.
+{ "nutritional_factors": { "value": "None.", "required": "conditional" } }
+Agent: Are you taking any of these medications: ethambutol, amiodarone, methotrexate, trimethoprim, or regular antacids like omeprazole?
+Patient: No, none of those.
+{ "toxic_medications": { "value": "None.", "required": "conditional" } }
+Consultation 3
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic?
+Patient: I’m very concerned about the brief periods where I lose my vision, especially now that I'm taking care of my newborn.
+{ "visual_loss_present": { "value": true } }
+Agent:
+Patient: It’s primarily a severe headache and these scary episodes where my vision blacks out for a second or two.
+{ "presenting_complaint_description": { "value": "Severe headache and brief visual blackouts.", "required": true } }
+Agent: Has this ever happened before?
+Patient: No, never. The headache started right after the baby was born.
+{ "previous_instances": { "value": false, "required": true } }
+Agent: I’m sorry to hear that this is happening while you are caring for a newborn. Could you tell me a bit more about the visual loss?
+Patient: They are very brief blackouts or grayouts of vision.
+{ "vl_description": { "value": "Recurrent episodes of brief blackouts or grayouts.", "required": "conditional" } }
+Agent: Can I ask if the vision is affected in both eyes or just one?
+Patient: I believe it affects both eyes at the same time.
+{ "vl_laterality": { "value": "binocular", "required": "conditional" } }
+Agent: Were both eyes affected at the same time, or did one start first?
+Patient: They happen simultaneously.
+{ "vl_onset_simultaneity": { "value": "simultaneous", "required": "conditional" } }
+Agent: And can you describe which part of the field of vision is affected?
+Patient: It seems to be the entire field of vision for a moment—it just goes gray or black.
+{ "vl_field": { "value": "Entire field of vision (grayouts/blackouts)", "required": "conditional" } }
+Agent: At its worst, in the affected area, how much could you see?
+Patient: For that moment, it’s total loss—a blackout.
+{ "vl_degree": { "value": "total", "required": "conditional" } }
+Agent: Could you describe what you could or couldn't see? For example, could you read fine print, count fingers, see hand movements?
+Patient: For those few seconds, I can’t see anything at all.
+{ "vl_acuity_description": { "value": "Cannot see anything for a few seconds.", "required": "conditional" } }
+Agent: When did this start?
+Patient: They began about two weeks ago.
+{ "vl_onset": { "value": "two weeks ago", "required": "conditional" } }
+Agent: How quickly did it develop?
+Patient: The episodes are sudden, but they started happening regularly around two weeks ago, so I guess chronic onset for the issue itself.
+{ "vl_onset_speed": { "value": "chronic", "required": "conditional" } }
+Agent: Is it constant or does it come and go?
+Patient: They come and go repeatedly.
+{ "vl_temporal_pattern": { "value": "intermittent", "required": "conditional" } }
+Agent: How long does each episode last?
+Patient: Only a few seconds at a time.
+{ "vl_episode_duration": { "value": "a few seconds", "required": "conditional" } }
+Agent: How often do you get these episodes?
+Patient: Multiple times a day, especially when I change position or strain myself.
+{ "vl_episode_frequency": { "value": "multiple times a day", "required": "conditional" } }
+Agent: After it started, did it keep getting worse?
+Patient: Yes, they happen more frequently now than when they first started.
+{ "vl_worsening": { "value": true, "required": "conditional" } }
+Agent: Was it still worsening after 2 weeks?
+Patient: No, they only started two weeks ago.
+{ "vl_worsening_after_2_weeks": { "value": false, "required": "conditional" } }
+Agent: And at any point did it start to improve?
+Patient: No.
+{ "vl_improved": { "value": false, "required": "conditional" } }
+Agent: Is anything specific missing from your vision, or are you having difficulty recognising things, for example, certain things, people, or faces?
+Patient: No.
+{ "agnosia_present": { "value": false, "required": true } }
+Agent: Are you experiencing any visual hallucinations?
+Patient: No.
+{ "hallucinations_present": { "value": false, "required": true } }
+Agent: Are you experiencing any problems with your colour vision?
+Patient: No.
+{ "cp_present": { "value": false, "required": true } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights?
+Patient: No.
+{ "vp_present": { "value": false, "required": true } }
+Agent: Do you have double vision (diplopia)?
+Patient: No double vision.
+{ "dp_present": { "value": false, "required": true } }
+Agent: Do you feel dizzy or have vertigo?
+Patient: No.
+{ "vertigo_present": { "value": false, "required": true } }
+Agent: Any sensation of images or your eyes moving rapidly?
+Patient: No.
+{ "nystagmus_present": { "value": false, "required": true } }
+Agent: Are you experiencing a headache?
+Patient: Yes, constantly.
+{ "h_present": { "value": true, "required": true } }
+Agent: Could you tell me a bit more about the headache?
+Patient: It’s severe and diffuse, present almost daily since about one week postpartum.
+{ "h_description": { "value": "Severe, diffuse headache.", "required": "conditional" } }
+Agent: When did this headache start?
+Patient: Roughly four weeks ago, about one week after delivery.
+{ "h_onset": { "value": "four weeks ago (1 week postpartum)", "required": "conditional" } }
+Agent: Where is the headache located?
+Patient: It is diffuse.
+{ "h_location": { "value": "Diffuse", "required": "conditional" } }
+Agent: Is it episodic, coming and going, or persistent and constant?
+Patient: It is a chronic and persistent headache.
+{ "h_temporal_pattern": { "value": "permanent", "required": "conditional" } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet?
+Patient: Yes, and that is exactly what triggers the blackouts—bending over to tend to the baby or straining.
+{ "h_worse_on_straining": { "value": true, "required": "conditional" } }
+Agent: Is it worse at any time of day, like morning or evening?
+Patient: No, it seems constant, though straining certainly makes it worse.
+{ "h_time_of_day": { "value": "none", "required": "conditional" } }
+Agent: Do you have eye pain?
+Patient: No.
+{ "ep_present": { "value": false, "required": true } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye?
+Patient: No.
+{ "dry_gritty_sensation": { "value": false } }
+Agent: Any change in the appearance of your eyes or surrounding areas?
+Patient: No.
+{ "appearance_changes_present": { "value": false, "required": true } }
+Agent: For this episode, did you have any contact with a healthcare professional?
+Patient: No, I called straight to schedule an appointment here.
+{ "hc_contact_occurred": { "value": false, "required": true } }
+Agent: Any other associated symptoms that you haven't mentioned?
+Patient: Yes, I have a constant sound in my ears—a "whooshing" sound that is synchronous with my heartbeat.
+{ "other_symptoms": { "value": "Constant pulsatile tinnitus (whooshing sound synchronous with heartbeat).", "required": false } }
+Agent: How has this episode affected you?
+Patient: The headache makes it incredibly hard to enjoy this time with my baby, and I’m afraid to bend over because of the blackouts.
+{ "functional_impact": { "value": "Headache makes it hard to enjoy time with baby; fear of bending over due to visual obscurations.", "required": true } }
+Agent: Have you noticed any change in your appearance, like your face, hands, or feet growing larger?
+Patient: No, I haven't noticed any changes.
+{ "acromegalic_features": { "value": false, "required": "conditional" } }
+Agent: Do you have any nipple discharge?
+Patient: No.
+{ "nipple_discharge": { "value": false, "required": "conditional" } }
+Agent: Have you noticed any change in your menstrual periods?
+Patient: Since I recently gave birth, my periods haven't returned yet, but they were regular before.
+{ "menstrual_changes": { "value": false, "required": "conditional" } }
+Agent: Do you feel hot or cold all the time?
+Patient: No, I feel normal.
+{ "temperature_intolerance": { "value": false, "required": "conditional" } }
+Agent: Do you have any dietary restrictions, digestive issues, or have you had stomach or gut surgery?
+Patient: No, I eat a normal diet, and I haven't had any stomach surgeries.
+{ "nutritional_factors": { "value": "None.", "required": "conditional" } }
+Agent: Are you taking any of these medications: ethambutol, amiodarone, methotrexate, trimethoprim, or regular antacids like omeprazole?
+Patient: No, none of those specific medications.
+{ "toxic_medications": { "value": "None listed.", "required": "conditional" } }
+Consultation 4
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic?
+Patient: I’m concerned about the double vision and the weakness in my right side.
+{ }
+Agent: Let’s get started. To begin with, could you tell me what’s brought you to the clinic?
+Patient: I developed a severe headache that won't go away, and now I have double vision and weakness in my arm and leg.
+{ "presenting_complaint_description": { "value": "Severe persistent headache, double vision, and right-sided weakness.", "required": true } }
+Agent: Has this ever happened before?
+Patient: No, nothing like the headache, double vision, or weakness has ever happened before.
+{ "previous_instances": { "value": false, "required": true } }
+Agent: I see. Do you feel that you have any actual loss of vision, such as blurriness, black spots, or blind spots?
+Patient: My sight itself is sharp, but seeing two images of everything is what’s affecting my vision. I haven't noticed any blurriness or blackouts.
+{ "visual_loss_present": { "value": false, "required": true } }
+Agent: Are you experiencing any visual hallucinations?
+Patient: No.
+{ "hallucinations_present": { "value": false, "required": true } }
+Agent: Are you experiencing any problems with your colour vision?
+Patient: No, colors look fine.
+{ "cp_present": { "value": false, "required": true } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights?
+Patient: No.
+{ "vp_present": { "value": false, "required": true } }
+Agent: Do you have double vision (diplopia)?
+Patient: Yes, I do.
+{ "dp_present": { "value": true, "required": true } }
+Agent: When did the double vision start?
+Patient: Probably in the last three to four days.
+{ "dp_onset": { "value": "3-4 days ago", "required": "conditional" } }
+Agent: Does the double vision go away if you close one eye, or is it still there?
+Patient: It goes away immediately when I close either eye.
+{ "dp_laterality": { "value": "binocular", "required": "conditional" } }
+Agent: Is it worse in any gaze direction?
+Patient: Yes, I notice the horizontal double vision specifically when I try to look toward the right.
+{ "dp_gaze_dependence": { "value": "Worse when looking toward the right (horizontal).", "required": "conditional" } }
+Agent: Do you feel dizzy or have vertigo?
+Patient: No.
+{ "vertigo_present": { "value": false, "required": true } }
+Agent: Any sensation of images or your eyes moving rapidly?
+Patient: No.
+{ "nystagmus_present": { "value": false, "required": true } }
+Agent: Are you experiencing a headache?
+Patient: Yes, it’s unrelenting.
+{ "h_present": { "value": true, "required": true } }
+Agent: Could you tell me a bit more about the headache?
+Patient: It's severe and has persisted without relief since it started.
+{ "h_description": { "value": "Severe, persistent headache.", "required": "conditional" } }
+Agent: When did this headache start?
+Patient: About three weeks ago, following an ear infection.
+{ "h_onset": { "value": "three weeks ago", "required": "conditional" } }
+Agent: Where is the headache located?
+Patient: It's unilateral, localized near the site of the left ear infection.
+{ "h_location": { "value": "Unilateral, localized near the site of the left ear.", "required": "conditional" } }
+Agent: Is it episodic, coming and going, or persistent and constant?
+Patient: Constant.
+{ "h_temporal_pattern": { "value": "permanent", "required": "conditional" } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet?
+Patient: Not that I've noticed.
+{ "h_worse_on_straining": { "value": false, "required": "conditional" } }
+Agent: Is it worse at any time of day, like morning or evening?
+Patient: No, it's steady.
+{ "h_time_of_day": { "value": "none", "required": "conditional" } }
+Agent: Do you have eye pain?
+Patient: No.
+{ "ep_present": { "value": false, "required": true } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye?
+Patient: No.
+{ "dry_gritty_sensation": { "value": false } }
+Agent: Any change in the appearance of your eyes or surrounding areas?
+Patient: No.
+{ "appearance_changes_present": { "value": false, "required": true } }
+Agent: For this episode, did you have any contact with a healthcare professional?
+Patient: Yes, I saw a doctor about the original earache and I saw a neurologist about the seizure.
+{ "hc_contact_occurred": { "value": true, "required": true } }
+Agent: Did you have any investigations or receive any treatments? Please could you list them.
+Patient: I had antibiotics for the ear infection, and the neurologist started me on a seizure medication.
+{ "hc_investigations_and_treatments": { "value": "Antibiotics for otitis media; seizure medication started by neurologist.", "required": "conditional" } }
+Agent: Any other associated symptoms that you haven't mentioned?
+Patient: Yes, about 10 days ago I had a focal seizure where my right arm and hand shook uncontrollably. Also, I’ve had noticeable weakness in my right arm and leg for the last week.
+{ "other_symptoms": { "value": "Focal seizure 10 days ago (right arm/hand shaking); right arm and leg weakness (hemiparesis); recent left-sided otitis media.", "required": false } }
+Agent: How has this episode affected you?
+Patient: The weakness and the double vision restrict my daily activities, making it difficult to drive or work.
+{ "functional_impact": { "value": "Restriction of daily activities due to hemiparesis and double vision.", "required": true } }
+Consultation 5
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic?
+Patient: It's mainly a general visual blurriness that hasn’t gone away for a month now, and I’ve had a constant, low-grade headache at the same time.
+{ "presenting_complaint_description": { "value": "General visual blurriness that hasn’t gone away for a month, coupled with a constant, low-grade headache.", } }, { "visual_loss_present": { "value": true } }
+Agent: Has this ever happened before?
+Patient: No, this visual blurriness is completely new to me.
+{ "previous_instances": { "value": false, } }
+Agent: Can I ask if the vision is affected in both eyes or just one?
+Patient: It seems to be general blurriness affecting everything I look at, so I think it’s both eyes.
+{ "vl_laterality": { "value": "binocular", } }
+Agent: Were both eyes affected at the same time, or did one start first?
+Patient: They seemed to get blurry around the same time.
+{ "vl_onset_simultaneity": { "value": "simultaneous", } }
+Agent: And can you describe which part of the field of vision is affected?
+Patient: It’s the entire field, generally blurry and disturbed.
+{ "vl_field": { "value": "entire field, generally blurry", } }
+Agent: At its worst, in the affected area, how much could you see?
+Patient: It’s never been a complete loss; it’s just reduced and hazy.
+{ "vl_degree": { "value": "partial", } }
+Agent: Could you describe what you could or couldn't see? For example, could you read fine print, count fingers, see hand movements?
+Patient: I can see hand movements and large shapes fine, but I definitely cannot read fine print or focus on things properly.
+{ "vl_acuity_description": { "value": "Cannot read fine print or focus, but can see hand movements and large shapes.", } }
+Agent: When did this start?
+Patient: About one month ago.
+{ "vl_onset": { "value": "one month ago", } }
+Agent: How quickly did it develop?
+Patient: It came on gradually over a few days, so I would say it was slow to develop.
+{ "vl_onset_speed": { "value": "chronic", } }
+Agent: Is it constant or does it come and go?
+Patient: It’s been constant since it started, unfortunately.
+{ "vl_temporal_pattern": { "value": "permanent", } }
+Agent: After it started, did it keep getting worse?
+Patient: Yes, it seemed to gradually worsen over the first couple of weeks before stabilizing at this level of blurriness.
+{ "vl_worsening": { "value": true, } }
+Agent: Was it still worsening after 2 weeks?
+Patient: No, it seemed to stabilize after those first couple of weeks.
+{ "vl_worsening_after_2_weeks": { "value": false, } }
+Agent: And at any point did it start to improve?
+Patient: No, it has not improved at all.
+{ "vl_improved": { "value": false, } }
+Agent: Is anything specific missing from your vision, or are you having difficulty recognising things, for example, certain things, people, or faces?
+Patient: Yes, actually. A couple of weeks ago, I had a brief episode where I suddenly couldn't speak clearly and couldn't name objects for a few minutes. That was very concerning.
+{ "agnosia_present": { "value": true, } }
+Agent: I’m sorry to hear that was concerning for you. Can you describe it to me in more detail?
+Patient: It was like my speech got confused—I couldn't articulate words and I had transient difficulty speaking, which immediately followed a rapid, unusual movement in my left arm.
+{ "agnosia_description": { "value": "Transient difficulty speaking (aphasia) and inability to name objects, following a rapid movement in the left arm.", } }
+Agent: Are you experiencing any visual hallucinations?
+Patient: No, I haven't seen anything that isn't there.
+{ "hallucinations_present": { "value": false, } }
+Agent: Are you experiencing any problems with your colour vision?
+Patient: No, colours seem normal.
+{ "cp_present": { "value": false, } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights?
+Patient: No, I haven't had any of those kinds of visual phenomena.
+{ "vp_present": { "value": false, } }
+Agent: Do you have double vision (diplopia)?
+Patient: No, I don't see double images.
+{ "dp_present": { "value": false, } }
+Agent: Do you feel dizzy or have vertigo?
+Patient: Not really dizzy, no.
+{ "vertigo_present": { "value": false, } }
+Agent: Any sensation of images or your eyes moving rapidly?
+Patient: No, my eyes feel steady.
+{ "nystagmus_present": { "value": false, } }
+Agent: Are you experiencing a headache?
+Patient: Yes, as I mentioned, I have a low-grade, constant, generalized headache.
+{ "h_present": { "value": true, } }
+Agent: Could you tell me a bit more about the headache?
+Patient: It’s a dull, constant, generalized ache that hasn't really improved since it started.
+{ "h_description": { "value": "Dull, constant, generalized ache", } }
+Agent: When did this headache start?
+Patient: It started about one month ago, around the same time as the visual disturbance.
+{ "h_onset": { "value": "one month ago", } }
+Agent: Where is the headache located?
+Patient: It's all across my head, diffuse.
+{ "h_location": { "value": "generalized/diffuse", } }
+Agent: Is it episodic, coming and going, or persistent and constant?
+Patient: It has been persistent and constant since it began.
+{ "h_temporal_pattern": { "value": "permanent", } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet?
+Patient: No, straining doesn't seem to affect it.
+{ "h_worse_on_straining": { "value": false, } }
+Agent: Is it worse at any time of day, like morning or evening?
+Patient: No, it just seems to be constant throughout the day.
+{ "h_time_of_day": { "value": "none", } }
+Agent: Do you have eye pain?
+Patient: No, my eyes themselves don't hurt.
+{ "ep_present": { "value": false, } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye?
+Patient: No, nothing like that.
+{ "dry_gritty_sensation": { "value": false, } }
+Agent: Any change in the appearance of your eyes or surrounding areas?
+Patient: No changes that I’ve noticed.
+{ "appearance_changes_present": { "value": false, } }
+Agent: For this episode, did you have any contact with a healthcare professional?
+Patient: Yes, I spoke to my primary care doctor when the symptoms first started, and she referred me here.
+{ "hc_contact_occurred": { "value": true, } }
+Agent: Did you have any investigations or receive any treatments? Please could you list them.
+Patient: No investigations yet, but I tried taking over-the-counter pain relievers for the headache, and they didn’t help at all.
+{ "hc_investigations_and_treatments": { "value": "Over-the-counter pain relievers (unsuccessful)", } }
+Agent: Any other associated symptoms that you haven't mentioned?
+Patient: Just that I have chronic inflammatory bowel disease, which I know is a risk factor for clotting.
+{ "other_symptoms": { "value": "History of chronic inflammatory bowel disease (IBD).", } }
+Agent: How has this episode affected you?
+Patient: The blurriness and the constant headache make it difficult to concentrate, especially when working on a computer or reading complex instructions.
+{ "functional_impact": { "value": "Difficulty concentrating, especially when reading or working on a computer due to blurriness and headache.", } }
+Agent: Have you noticed any change in your appearance, like your face, hands, or feet growing larger?
+Patient: No, nothing like that.
+{ "acromegalic_features": { "value": false, } }
+Agent: Do you have any nipple discharge?
+Patient: No.
+{ "nipple_discharge": { "value": false, } }
+Agent: Have you noticed any change in your menstrual periods?
+Patient: My periods have been regular.
+{ "menstrual_changes": { "value": false, } }
+Agent: Do you feel hot or cold all the time?
+Patient: Not particularly.
+{ "temperature_intolerance": { "value": false, } }
+Agent: Do you have any dietary restrictions, digestive issues, or have you had stomach or gut surgery?
+Patient: I have IBD, so I manage my diet carefully, but no recent surgery.
+{ "nutritional_factors": { "value": "Manages diet due to Chronic Inflammatory Bowel Disease (IBD).", } }
+Agent: Are you taking any of these medications: ethambutol, amiodarone, methotrexate, trimethoprim, or regular antacids like omeprazole?
+Patient: No, none of those specific medications.
+{ "toxic_medications": { "value": "None listed.", } }
+Agent: Are you having difficulty reading words?  Patient: Yes, the blurriness and the struggle to concentrate make reading very hard. { "difficulty_reading": { "value": true, "required": "conditional" } }
+Agent: If you spell out a word letter by letter, can you then recognise it?  Patient: I think the problem is less about spelling and more about the blurriness itself. I cannot make out the individual letters clearly enough to spell them out. { "can_read_by_spelling": { "value": false, "required": "conditional" } }
+Agent: Have you had trouble recognizing people you know, like family members or friends? Patient: No, I recognize people fine. My issue was naming objects and speaking, not recognizing faces. { "difficulty_recognising_people": { "value": false, "required": "conditional" } }
+Agent: Are you having trouble finding your way around places you know well, like your home or neighborhood? Patient: No, I can navigate fine. { "trouble_navigating": { "value": false, "required": "conditional" } }
+Agent: When you look at a busy scene, can you see the whole picture, or do you only see one thing at a time? Patient: I can see the whole picture, it's just hazy and blurry everywhere. { "can_see_whole_picture": { "value": true, "required": "conditional" } }
+Agent: If you watch water being poured, does it look frozen or static?Patient: No, movement looks normal to me. { "can_see_moving_water": { "value": false, "required": "conditional" } }
+Consultation 6
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic?
+Patient: I was struck by a sudden, severe headache five days ago, which I thought was the worst headache of my life. Now, I have severe double vision that is constant.
+{ "presenting_complaint_description": { "value": "Sudden, severe 'thunderclap' headache five days ago, followed by constant, severe double vision.", } }
+Agent: Has this ever happened before?
+Patient: No, the severity of the headache and the double vision are both completely new.
+{ "previous_instances": { "value": false, } }
+Agent: Can I ask if the vision is affected in both eyes or just one?
+Patient: I can see fine with each eye separately, but when I open both, I see two images.
+{ "visual_loss_present": { "value": false, } }
+Agent: Are you experiencing any visual hallucinations?
+Patient: No.
+{ "hallucinations_present": { "value": false, } }
+Agent: Are you experiencing any problems with your colour vision?
+Patient: No, colours look fine.
+{ "cp_present": { "value": false, } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights?
+Patient: No, just the double vision.
+{ "vp_present": { "value": false, } }
+Agent: Do you have double vision (diplopia)?
+Patient: Yes, that is one of my main problems now.
+{ "dp_present": { "value": true, } }
+Agent: When did the double vision start?
+Patient: It started three days ago, a couple of days after that huge headache hit.
+{ "dp_onset": { "value": "three days ago", } }
+Agent: Does the double vision go away if you close one eye, or is it still there?
+Patient: It goes away immediately when I close either eye.
+{ "dp_laterality": { "value": "binocular", } }
+Agent: Is it worse in any gaze direction?
+Patient: Yes, it is vertical double vision, and I find it particularly disruptive when I try to look upwards.
+{ "dp_gaze_dependence": { "value": "vertical double vision, worse when looking upwards", } }
+Agent: Do you feel dizzy or have vertigo?
+Patient: No, I don't feel dizzy.
+{ "vertigo_present": { "value": false, } }
+Agent: Any sensation of images or your eyes moving rapidly?
+Patient: No.
+{ "nystagmus_present": { "value": false, } }
+Agent: Are you experiencing a headache?
+Patient: Yes, the initial thunderclap pain passed, but I have been left with a severe, unrelenting generalized headache.
+{ "h_present": { "value": true, } }
+Agent: Could you tell me a bit more about the headache?
+Patient: It's severe, general pain across my whole head, and it just hasn’t stopped.
+{ "h_description": { "value": "Severe, unrelenting generalized headache", } }
+Agent: When did this headache start?
+Patient: Five days ago. It was instant, reaching maximum intensity right away.
+{ "h_onset": { "value": "five days ago (acute onset)", } }
+Agent: Where is the headache located?
+Patient: It is generalized across my head now.
+{ "h_location": { "value": "generalized", } }
+Agent: Is it episodic, coming and going, or persistent and constant?
+Patient: It is persistent and constant since the onset of the severe pain.
+{ "h_temporal_pattern": { "value": "permanent", } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet?
+Patient: I haven't noticed straining making it worse.
+{ "h_worse_on_straining": { "value": false, } }
+Agent: Is it worse at any time of day, like morning or evening?
+Patient: It's constant, so it doesn't seem worse at any specific time.
+{ "h_time_of_day": { "value": "none", } }
+Agent: Do you have eye pain?
+Patient: No eye pain.
+{ "ep_present": { "value": false, } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye?
+Patient: No.
+{ "dry_gritty_sensation": { "value": false, } }
+Agent: Any change in the appearance of your eyes or surrounding areas?
+Patient: No, they look normal.
+{ "appearance_changes_present": { "value": false, } }
+Agent: For this episode, did you have any contact with a healthcare professional?
+Patient: Yes, I went to the emergency room when the thunderclap headache happened, and they did some scans.
+{ "hc_contact_occurred": { "value": true, } }
+Agent: Did you have any investigations or receive any treatments? Please could you list them.
+Patient: They gave me some strong pain medication in the ER, and they did a CT scan of my head.
+{ "hc_investigations_and_treatments": { "value": "CT scan of the head; strong pain medication.", } }
+Agent: Any other associated symptoms that you haven't mentioned?
+Patient: I’ve been feeling unusually and profoundly fatigued since the headache started.
+{ "other_symptoms": { "value": "Profound fatigue.", } }
+Agent: How has this episode affected you?
+Patient: The severe headache and the double vision make everything difficult; I can barely focus or walk around comfortably.
+{ "functional_impact": { "value": "Inability to focus or walk around comfortably due to headache and double vision.", } }
+Consultation 7
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic?
+Patient: It’s persistent visual issues and headaches that have been getting worse for about three months. The visual problems include double vision and brief blackouts.
+{ "presenting_complaint_description": { "value": "Persistent visual issues and headaches that have been worsening for three months, including double vision and brief blackouts.", } }, , { "visual_loss_present": { "value": true } }
+Agent: Has this ever happened before?
+Patient: I used to get occasional migraines, but the visual symptoms and the constant severity of this headache are new.
+{ "previous_instances": { "value": true, } }
+Agent: Since you've had previous headaches, how does this one compare to your usual or last instance?
+Patient: My usual headaches were migraines that responded to typical medication; this current diffuse headache is constant, much more severe, and doesn't remit with standard pain relievers.
+{ "comparison_to_last": { "value": "Much more severe, constant, diffuse, and fails to remit with typical over-the-counter pain relievers, unlike previous occasional migraines.", } }
+Agent: Can I ask if the vision is affected in both eyes or just one?
+Patient: I have constant double vision, and the brief blackouts seem to affect both eyes sometimes.
+{ "vl_laterality": { "value": "binocular", } }
+Agent: Were both eyes affected at the same time, or did one start first?
+Patient: The visual issues seemed to start gradually and simultaneously in both eyes.
+{ "vl_onset_simultaneity": { "value": "simultaneous", } }
+Agent: And can you describe which part of the field of vision is affected?
+Patient: The blackouts are the entire visual field, but only for a second or two.
+{ "vl_field": { "value": "entire visual field during blackouts", } }
+Agent: At its worst, in the affected area, how much could you see?
+Patient: During the brief episodes, my vision completely blacks out or grays out.
+{ "vl_degree": { "value": "total", } }
+Agent: Could you describe what you could or couldn't see? For example, could you read fine print, count fingers, see hand movements?
+Patient: When the blackouts happen, I see absolutely nothing for a second or two.
+{ "vl_acuity_description": { "value": "See absolutely nothing during brief blackouts.", } }
+Agent: When did this start?
+Patient: The visual blackouts started about two months ago.
+{ "vl_onset": { "value": "about two months ago", } }
+Agent: How quickly did it develop?
+Patient: The vision loss itself (the blackout event) is very rapid, seconds long.
+{ "vl_onset_speed": { "value": "acute", } }
+Agent: Is it constant or does it come and go?
+Patient: It definitely comes and goes; they are recurrent episodes.
+{ "vl_temporal_pattern": { "value": "intermittent", } }
+Agent: How long does each episode last?
+Patient: Only a few seconds at a time.
+{ "vl_episode_duration": { "value": "only a few seconds", } }
+Agent: How often do you get these episodes?
+Patient: They are increasingly frequent—multiple times a day now.
+{ "vl_episode_frequency": { "value": "multiple times a day, increasingly frequent", } }
+Agent: After it started, did it keep getting worse?
+Patient: Yes, the frequency of the blackouts has been increasing.
+{ "vl_worsening": { "value": true, } }
+Agent: Was it still worsening after 2 weeks?
+Patient: Yes, the blackouts have continued to become more frequent over the last two months.
+{ "vl_worsening_after_2_weeks": { "value": true, } }
+Agent: And at any point did it start to improve?
+Patient: No, they have never improved.
+{ "vl_improved": { "value": false, } }
+Agent: Is anything specific missing from your vision, or are you having difficulty recognising things, for example, certain things, people, or faces?
+Patient: No difficulty recognizing things.
+{ "agnosia_present": { "value": false, } }
+Agent: Are you experiencing any visual hallucinations?
+Patient: No.
+{ "hallucinations_present": { "value": false, } }
+Agent: Are you experiencing any problems with your colour vision?
+Patient: No, colours seem fine.
+{ "cp_present": { "value": false, } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights?
+Patient: No.
+{ "vp_present": { "value": false, } }
+Agent: Do you have double vision (diplopia)?
+Patient: Yes, I do.
+{ "dp_present": { "value": true, } }
+Agent: When did the double vision start?
+Patient: That started about six weeks ago, before the blackouts got really frequent.
+{ "dp_onset": { "value": "about six weeks ago", } }
+Agent: Does the double vision go away if you close one eye, or is it still there?
+Patient: It goes away when I close either eye.
+{ "dp_laterality": { "value": "binocular", } }
+Agent: Is it worse in any gaze direction?
+Patient: It's horizontal double vision, present when I look straight ahead, and it gets worse when I look to the side.
+{ "dp_gaze_dependence": { "value": "horizontal, worse when looking to the side", } }
+Agent: Do you feel dizzy or have vertigo?
+Patient: No, not dizzy.
+{ "vertigo_present": { "value": false, } }
+Agent: Any sensation of images or your eyes moving rapidly?
+Patient: No.
+{ "nystagmus_present": { "value": false, } }
+Agent: Are you experiencing a headache?
+Patient: Yes, constant and worsening over the last three months.
+{ "h_present": { "value": true, } }
+Agent: Could you tell me a bit more about the headache?
+Patient: It’s diffuse, feeling generalized across my head, and resembles my previous migraines but is much more intense and constant now.
+{ "h_description": { "value": "Diffuse, generalized, intense pain, worsening over time.", } }
+Agent: When did this headache start?
+Patient: About three months ago.
+{ "h_onset": { "value": "three months ago", } }
+Agent: Where is the headache located?
+Patient: It feels generalized across my head.
+{ "h_location": { "value": "diffuse/generalized", } }
+Agent: Is it episodic, coming and going, or persistent and constant?
+Patient: It has been persistent and constant.
+{ "h_temporal_pattern": { "value": "permanent", } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet?
+Patient: Absolutely. It is particularly intense when I cough or bend over.
+{ "h_worse_on_straining": { "value": true, } }
+Agent: Is it worse at any time of day, like morning or evening?
+Patient: No, it seems constant throughout the day.
+{ "h_time_of_day": { "value": "none", } }
+Agent: Do you have eye pain?
+Patient: No, I do not.
+{ "ep_present": { "value": false, } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye?
+Patient: No.
+{ "dry_gritty_sensation": { "value": false, } }
+Agent: Any change in the appearance of your eyes or surrounding areas?
+Patient: Nothing unusual on the outside.
+{ "appearance_changes_present": { "value": false, } }
+Agent: For this episode, did you have any contact with a healthcare professional?
+Patient: I spoke with my GP about the worsening headache, and they booked this appointment.
+{ "hc_contact_occurred": { "value": true, } }
+Agent: Did you have any investigations or receive any treatments? Please could you list them.
+Patient: I was advised to try stronger over-the-counter medication, which did not help the pain.
+{ "hc_investigations_and_treatments": { "value": "Tried stronger over-the-counter pain medication (unsuccessful).", } }
+Agent: Any other associated symptoms that you haven't mentioned?
+Patient: I feel generally unwell and fatigued, which I think is from the constant discomfort.
+{ "other_symptoms": { "value": "General fatigue and feeling unwell.", } }
+Agent: How has this episode affected you?
+Patient: The double vision makes reading impossible, and the blackouts are terrifying, especially when I stand up quickly. The constant headache is draining.
+{ "functional_impact": { "value": "Double vision prevents reading; blackouts are terrifying when changing position; constant headache is draining.", } }
+Agent: Do you have scalp tenderness ?  Patient: No, my scalp doesn't hurt when I touch it. { "scalp_tenderness": { "value": false, "required": "conditional" } }
+Agent: Do you have jaw pain when chewing  Patient: No, chewing is completely normal for me. { "jaw_claudication": { "value": false, "required": "conditional" } }
+Agent: Do you have pain in your shoulders or around your shoulder girdle ?  Patient: No, I don't have any pain in my shoulders or arms. { "shoulder_girdle_pain": { "value": false, "required": "conditional" } }
+Consultation 8
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic?
+Patient: I woke up ten days ago with a continuous, severe headache, and since then, I’ve had some strange flashing visuals, intermittent weakness, and trouble speaking and thinking clearly.
+{ "presenting_complaint_description": { "value": "Continuous, severe headache (10 days), strange flashing visuals, intermittent weakness, and trouble speaking clearly.", } }
+Agent: Has this ever happened before?
+Patient: No, never anything like this combination of symptoms.
+{ "previous_instances": { "value": false, } }
+Agent: Can I ask if the vision is affected in both eyes or just one?
+Patient: I haven't noticed blurred vision, but I have trouble using my sight because I feel confused and I can’t seem to recognize names or words sometimes.
+{ "visual_loss_present": { "value": true, } }
+Agent: Could you tell me a bit more about the visual loss?
+Patient: It’s not just blurriness; it’s more that my mind feels slow, and I can't put together what I’m looking at or recognize things or names consistently.
+{ "vl_description": { "value": "Cognitive slowing and difficulty processing visual information/naming objects (agnosia/aphasia).", } }
+Agent: Can I ask if the vision is affected in both eyes or just one?
+Patient: It is difficult to say if it's one or both, since it seems to be a problem with processing information rather than sharpness.
+{ "vl_laterality": { "value": "binocular", } }
+Agent: Were both eyes affected at the same time, or did one start first?
+Patient: The cognitive symptoms developed over several days after the headache started.
+{ "vl_onset_simultaneity": { "value": "simultaneous", } }
+Agent: And can you describe which part of the field of vision is affected?
+Patient: I haven’t noticed any blind spots in my field of vision.
+{ "vl_field": { "value": "none apparent", } }
+Agent: At its worst, in the affected area, how much could you see?
+Patient: I can see everything, but it is the comprehension that is difficult.
+{ "vl_degree": { "value": "partial", } }
+Agent: Could you describe what you could or couldn't see? For example, could you read fine print, count fingers, see hand movements?
+Patient: I can see fine print, but I struggle to articulate what I am seeing; I have slurred speech and trouble naming objects.
+{ "vl_acuity_description": { "value": "Acuity preserved, but difficulty articulating words/naming objects.", } }
+Agent: When did this start?
+Patient: The cognitive symptoms developed four to six days after the headache started, which was ten days ago.
+{ "vl_onset": { "value": "around 4 to 6 days ago", } }
+Agent: How quickly did it develop?
+Patient: The cognitive symptoms developed slowly over several days.
+{ "vl_onset_speed": { "value": "subacute", } }
+Agent: Is it constant or does it come and go?
+Patient: It is mostly constant, but the confusion and weakness seem to fluctuate sometimes.
+{ "vl_temporal_pattern": { "value": "permanent", } }
+Agent: After it started, did it keep getting worse?
+Patient: Yes, the confusion and speech trouble have worsened since they began.
+{ "vl_worsening": { "value": true, } }
+Agent: Was it still worsening after 2 weeks?
+Patient: Yes, they are still bothering me now.
+{ "vl_worsening_after_2_weeks": { "value": true, } }
+Agent: And at any point did it start to improve?
+Patient: No, it has not improved, although it fluctuates.
+{ "vl_improved": { "value": false, } }
+Agent: Is anything specific missing from your vision, or are you having difficulty recognising things, for example, certain things, people, or faces?
+Patient: Yes, I am having trouble naming objects consistently.
+{ "agnosia_present": { "value": true, } }
+Agent: Can you describe it to me in more detail?
+Patient: I can see an object, but when I try to say its name, I struggle to articulate the word, or I say the wrong thing.
+{ "agnosia_description": { "value": "Difficulty articulating words clearly (slurring) and inability to name objects consistently.", } }
+Agent: Are you experiencing any visual hallucinations?
+Patient: No, not true hallucinations.
+{ "hallucinations_present": { "value": false, } }
+Agent: Are you experiencing any problems with your colour vision?
+Patient: No, I don't think so.
+{ "cp_present": { "value": false, } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights?
+Patient: Yes, I had flashing lights just before the seizure I had a few days ago.
+{ "vp_present": { "value": true, } }
+Agent: When did this start?
+Patient: Four days before my appointment, right before the seizure episode.
+{ "vp_onset": { "value": "four days ago", } }
+Agent: Is this happening in one eye, or in both?
+Patient: It was visible in my peripheral vision, but I can't say if it was one eye or both. I think it was both, as I didn't test it by covering an eye.
+{ "vp_laterality": { "value": "binocular", } }
+Agent: Can you describe these visual phenomena?
+Patient: They were strange, flashing, multi-colored visual patterns.
+{ "vp_description": { "value": "Strange, flashing, multi-colored visual pattern.", } }
+Agent: How long do these episodes last?
+Patient: It only lasted a few minutes right before the seizure started.
+{ "vp_duration": { "value": "a few minutes", } }
+Agent: Where in your field of vision do these occur?
+Patient: They began in my peripheral vision.
+{ "vp_location": { "value": "peripheral vision", } }
+Agent: Are these phenomena ever followed by a headache?
+Patient: This specific episode was followed immediately by involuntary jerking movements, which was a focal seizure.
+{ "vp_followed_by_headache": { "value": false, } }
+Agent: Do you have double vision (diplopia)?
+Patient: No double vision.
+{ "dp_present": { "value": false, } }
+Agent: Do you feel dizzy or have vertigo?
+Patient: No.
+{ "vertigo_present": { "value": false, } }
+Agent: Any sensation of images or your eyes moving rapidly?
+Patient: No.
+{ "nystagmus_present": { "value": false, } }
+Agent: Are you experiencing a headache?
+Patient: Yes, the continuous severe headache I mentioned earlier.
+{ "h_present": { "value": true, } }
+Agent: Could you tell me a bit more about the headache?
+Patient: It is severe, generalized, and continuous. It didn't reach maximal intensity instantly, but rapidly developed over the first few days.
+{ "h_description": { "value": "Severe, continuous, generalized headache.", } }
+Agent: When did this headache start?
+Patient: Approximately ten days ago.
+{ "h_onset": { "value": "ten days ago", } }
+Agent: Where is the headache located?
+Patient: It's a generalized pain.
+{ "h_location": { "value": "generalized", } }
+Agent: Is it episodic, coming and going, or persistent and constant?
+Patient: It has been continuous since it started.
+{ "h_temporal_pattern": { "value": "permanent", } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet?
+Patient: No, straining doesn't seem to make it worse.
+{ "h_worse_on_straining": { "value": false, } }
+Agent: Is it worse at any time of day, like morning or evening?
+Patient: No specific time of day is worse.
+{ "h_time_of_day": { "value": "none", } }
+Agent: Do you have eye pain?
+Patient: No.
+{ "ep_present": { "value": false, } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye?
+Patient: No.
+{ "dry_gritty_sensation": { "value": false, } }
+Agent: Any change in the appearance of your eyes or surrounding areas?
+Patient: I haven't noticed any changes in the appearance of my eyes.
+{ "appearance_changes_present": { "value": false, } }
+Agent: For this episode, did you have any contact with a healthcare professional?
+Patient: Yes, after the seizure episode, my wife insisted I speak to a doctor.
+{ "hc_contact_occurred": { "value": true, } }
+Agent: Did you have any investigations or receive any treatments? Please could you list them.
+Patient: I haven’t had any investigations or treatments yet, just this referral.
+{ "hc_investigations_and_treatments": { "value": "None yet.", } }
+Agent: Any other associated symptoms that you haven't mentioned?
+Patient: I have weakness in my right arm and leg, and I recently recovered from a mild sinus infection about two weeks ago.
+{ "other_symptoms": { "value": "Weakness in right arm and leg (hemiparesis), recent sinus infection.", } }
+Agent: How has this episode affected you?
+Patient: The combination of right-sided weakness, confusion, and difficulty speaking has made it extremely hard to do any of my daily activities, and I can't work.
+{ "functional_impact": { "value": "Unable to perform daily activities or work due to right-sided weakness, confusion, and difficulty speaking.", } }
+Agent: Are you having difficulty reading words?
+Patient: Yes, the difficulty articulating words and the confusion make reading very hard.
+{ "difficulty_reading": { "value": true, } }
+Agent: If you spell out a word letter by letter, can you then recognise it?
+Patient: I haven’t tried that specific technique, but the difficulty seems related to processing and speech output rather than just seeing the letters.
+{ "can_read_by_spelling": { "value": false, } }
+Agent: Have you had trouble recognizing people you know, like family members or friends?
+Patient: Not recognizing their faces, but when I try to name them, I struggle.
+{ "difficulty_recognising_people": { "value": false, } }
+Agent: Are you having trouble finding your way around places you know well, like your home or neighborhood?
+Patient: I haven't left the house much, but I feel generally confused, so maybe.
+{ "trouble_navigating": { "value": false, } }
+Agent: When you look at a busy scene, can you see the whole picture, or do you only see one thing at a time?
+Patient: I seem to see the whole picture fine.
+{ "can_see_whole_picture": { "value": true, } }
+Agent: If you watch water being poured, does it look frozen or static?
+Patient: No, movement looks normal to me.
+{ "can_see_moving_water": { "value": false, } }
+Consultation 9
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic? Patient: My main concern is my vision; it’s getting blurry in my left eye and I’m scared I’m going blind. It started about ten days ago, and I also have a constant headache now. { "presenting_complaint_description": { "value": "My main concern is my vision; it’s getting blurry in my left eye and I’m scared I’m going blind. It started about ten days ago, and I also have a constant headache now.", } }
+Agent: Thank you for sharing that. I’m sorry to hear you’re worried about your vision. Has this ever happened before? Patient: No, never anything like this. { "previous_instances": { "value": false, } }
+Agent: Ask whether the patient has any visual loss. Patient: Yes, the blurring is definitely a loss of clear vision. { "visual_loss_present": { "value": true, } }
+Agent: Could you tell me a bit more about the visual loss? Patient: It’s a blurring or fog that is steadily worsening in my left eye. Now I struggle to read anything with that eye. { "vl_description": { "value": "blurring or fog that is steadily worsening in my left eye. Now I struggle to read anything with that eye.", } }
+Agent: Can I ask if the vision is affected in both eyes or just one? Patient: Just my left eye. { "vl_laterality": { "value": "monocular_left", } }
+Agent: Which eye is affected? Patient: It’s the left one.
+Agent: And can you describe which part of the field of vision is affected? Patient: It feels like the whole vision in that eye is foggy; it's not just the side or the top. { "vl_field": { "value": "the whole vision in that eye is foggy", } }
+Agent: At its worst, in the affected area, how much could you see? Patient: It's partial loss; I can still make out shapes but I definitely can’t see clearly. { "vl_degree": { "value": "partial", } }
+Agent: Could you describe what you could or couldn't see? For example, could you read fine print, count fingers, see hand movements? Patient: I can’t read fine print or even large headlines. I can still count fingers. { "vl_acuity_description": { "value": "I can’t read fine print or even large headlines. I can still count fingers.", } }
+Agent: When did this start? Patient: About ten days ago. { "vl_onset": { "value": "ten days ago", } }
+Agent: How quickly did it develop? Patient: It developed subacutely; it was a slight fog at first and got steadily worse over a few days. { "vl_onset_speed": { "value": "subacute", } }
+Agent: Is it constant or does it come and go? Patient: It is constant; it has not improved since it started. { "vl_temporal_pattern": { "value": "permanent", } }
+Agent: After it started, did it keep getting worse? Patient: Yes, it has been steadily worsening. { "vl_worsening": { "value": true, } }
+Agent: Was it still worsening after 2 weeks? Patient: Since it only started ten days ago, it hasn't been two weeks yet, but it's still worse than when it started. { "vl_worsening_after_2_weeks": { "value": false, } }
+Agent: And at any point did it start to improve? Patient: No, not at all. { "vl_improved": { "value": false, } }
+Agent: Do you ever have brief blackouts in vision when you look around? Patient: No, I haven't had any blackouts. { "vl_blackouts": { "value": false, } }
+Agent: Is anything specific missing from your vision, or are you having difficulty recognising things, for example, certain things, people, or faces? Patient: No, I can still recognise everything fine; it's just blurry. { "agnosia_present": { "value": false, } }
+Agent: Are you experiencing any visual hallucinations? Patient: No. { "hallucinations_present": { "value": false, } }
+Agent: Are you experiencing any problems with your colour vision? Patient: Yes, definitely. For the last three days, colors seem muted or washed out in my left eye. { "cp_present": { "value": true, } }
+Agent: When did this start? Patient: About three days ago. { "cp_onset": { "value": "three days ago", } }
+Agent: Is the loss of colour just in one eye, or in both? Patient: Just the left eye. { "cp_laterality": { "value": "monocular", } }
+Agent: Is the loss of colour in one part of your field of vision, for example the left side of your vision or the upper half of your vision? Patient: No, it affects my entire left eye vision. { "cp_field": { "value": "entire left eye vision", } }
+Agent: Are any particular colours affected (e.g. red desaturation)? Patient: Yes, everything just seems less bright; colors are washed out. { "cp_colours_affected": { "value": "everything just seems less bright; colors are washed out", } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights? Patient: No, nothing like that. { "vp_present": { "value": false, } }
+Agent: Do you have double vision (diplopia)? Patient: No. { "dp_present": { "value": false, } }
+Agent: Do you feel dizzy or have vertigo? Patient: No. { "vertigo_present": { "value": false, } }
+Agent: Any sensation of images or your eyes moving rapidly? Patient: No. { "nystagmus_present": { "value": false, } }
+Agent: Are you experiencing a headache? Patient: Yes, I am. { "h_present": { "value": true, } }
+Agent: Could you tell me a bit more about the headache? Patient: It’s a dull, persistent, throbbing pain. It’s not severe, but it’s always there. { "h_description": { "value": "dull, persistent, throbbing pain", } }
+Agent: When did this headache start? Patient: About a week ago, after my baby was born. { "h_onset": { "value": "a week ago", } }
+Agent: Where is the headache located? Patient: Across the back of my head. { "h_location": { "value": "Across the back of my head", } }
+Agent: Is it episodic, coming and going, or persistent and constant? Patient: It is persistent and constant, unlike my old tension headaches. { "h_temporal_pattern": { "value": "permanent", } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet? Patient: No, I haven't noticed that. { "h_worse_on_straining": { "value": false, } }
+Agent: Is it worse at any time of day, like morning or evening? Patient: I feel pressure in my ears when I lie down, but the headache itself doesn't seem linked to a specific time of day. { "h_time_of_day": { "value": "none", } }
+Agent: Do you have eye pain? Patient: No. { "ep_present": { "value": false, } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye? Patient: No. { "dry_gritty_sensation": { "value": false, } }
+Agent: Any change in the appearance of your eyes or surrounding areas? Patient: No, they look perfectly normal. { "appearance_changes_present": { "value": false, } }
+Agent: For this episode, did you have any contact with a healthcare professional? Patient: Only with my OBGYN after delivery, but not specifically for these new symptoms. { "hc_contact_occurred": { "value": false, } }
+Agent: Any other associated symptoms that you haven't mentioned? Patient: I am profoundly tired and, as I said, I feel pressure in my ears when I lie down. { "other_symptoms": { "value": "profoundly tired; ear pressure when lying down", } }
+Agent: How has this episode affected you? Patient: It’s making it hard to care for my newborn because I struggle to read and I am so tired and nervous about losing my vision permanently. { "functional_impact": { "value": "struggles to read due to blurring; severe fatigue; anxiety about permanent vision loss", } }
+Agent: Have you had previous episodes of visual loss in either eye that resolved completely?  Patient: No, this blurring and fog in my left eye is completely new, and I’ve never had anything like it before. { "previous_visual_loss_episodes": { "value": false, "required": "conditional" } }
+Agent: Do your symptoms worsen with exercise or heat exposure (Uhthoff phenomenon)? Patient: No, I haven't noticed that the blurring gets worse when I exercise or feel hot. { "uhthoff_phenomenon": { "value": false, "required": "conditional" } }
+Agent: Do moving objects appear closer or further than they are (Pulfrich phenomenon)? Patient: No, things move normally, they just look foggy on the left side. { "pulfrich_phenomenon": { "value": false, "required": "conditional" } }
+Consultation 10
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic? Patient: I came in because I have constant double vision. It started about five months ago and just won't go away. { "presenting_complaint_description": { "value": "constant double vision that started about five months ago", } }
+Agent: I see. Has this ever happened before? Patient: No, I’ve never had double vision before. { "previous_instances": { "value": false, } }
+Agent: Do you have double vision (diplopia)? Patient: Yes, that’s my main problem. { "dp_present": { "value": true, } }
+Agent: When did the double vision start? Patient: About five months ago. { "dp_onset": { "value": "five months ago", } }
+Agent: Does the double vision go away if you close one eye, or is it still there? Patient: I can easily eliminate the second image by closing either eye. { "dp_laterality": { "value": "binocular", } }
+Agent: Is it worse in any gaze direction? Patient: Yes, it is horizontal and it appears whenever I try to focus on distant objects. { "dp_gaze_dependence": { "value": "horizontal and constant, appearing when focusing on distant objects", } }
+Agent: Ask whether the patient has any visual loss. Patient: I don't feel like I have loss of vision, just the doubling. { "visual_loss_present": { "value": false, } }
+Agent: Are you experiencing any visual hallucinations? Patient: No. { "hallucinations_present": { "value": false, } }
+Agent: Are you experiencing any problems with your colour vision? Patient: No. { "cp_present": { "value": false, } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights? Patient: No, none of that. { "vp_present": { "value": false, } }
+Agent: Do you feel dizzy or have vertigo? Patient: No, I don't get dizzy. { "vertigo_present": { "value": false, } }
+Agent: Any sensation of images or your eyes moving rapidly? Patient: No. { "nystagmus_present": { "value": false, } }
+Agent: Are you experiencing a headache? Patient: Yes, I have a low-grade, aching pain, but it's milder now than it was initially. { "h_present": { "value": true, } }
+Agent: Could you tell me a bit more about the headache? Patient: It’s a low-grade, constant, dull ache, but when it first started six months ago, it was severe and localized near my ear infection. { "h_description": { "value": "low-grade, constant, dull ache, but was severe initially", } }
+Agent: When did this headache start? Patient: About six months ago, right after a bad ear infection. { "h_onset": { "value": "six months ago", } }
+Agent: Where is the headache located? Patient: Primarily behind my left ear and sometimes running down the left side of my neck. { "h_location": { "value": "behind left ear and left side of neck", } }
+Agent: Is it episodic, coming and going, or persistent and constant? Patient: It's been persistent for months, though the intensity fluctuates. { "h_temporal_pattern": { "value": "permanent", } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet? Patient: No, I haven't noticed that. { "h_worse_on_straining": { "value": false, } }
+Agent: Is it worse at any time of day, like morning or evening? Patient: No particular time of day. { "h_time_of_day": { "value": "none", } }
+Agent: Do you have eye pain? Patient: No. { "ep_present": { "value": false, } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye? Patient: No. { "dry_gritty_sensation": { "value": false, } }
+Agent: Any change in the appearance of your eyes or surrounding areas? Patient: No, nothing unusual. { "appearance_changes_present": { "value": false, } }
+Agent: For this episode, did you have any contact with a healthcare professional? Patient: Yes, I was treated for the severe ear infection six months ago. I took antibiotics for that. { "hc_contact_occurred": { "value": true, } }
+Agent: Did you have any investigations or receive any treatments? Please could you list them. Patient: Just multiple rounds of antibiotics for the otitis media. { "hc_investigations_and_treatments": { "value": "multiple rounds of antibiotics for otitis media", } }
+Agent: Any other associated symptoms that you haven't mentioned? Patient: No, just the vision and the persistent pain behind my ear. { "other_symptoms": { "value": "None.", } }
+Agent: How has this episode affected you? Patient: The double vision is annoying, especially when trying to focus on distant objects. It restricts my activities somewhat. { "functional_impact": { "value": "double vision makes focusing on distant objects difficult, restricting activities", } }
+Agent: Do you have scalp tenderness ?  Patient: No, my scalp doesn't hurt when I touch it, even where the headache is located. { "scalp_tenderness": { "value": false, "required": "conditional" } }
+Agent: Do you have jaw pain when chewing  Patient: No, I haven't had any trouble with pain while chewing. { "jaw_claudication": { "value": false, "required": "conditional" } }
+Agent: Do you have pain in your shoulders or around your shoulder girdle ?  Patient: No, I don't have any body aches or pain in my shoulders. { "shoulder_girdle_pain": { "value": false, "required": "conditional" } }
+Consultation 11
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic? Patient: Two weeks ago, I had a sudden, agonizing headache—a real thunderclap—and my vision dimmed briefly. Now I’m left with this nagging, constant headache. { "presenting_complaint_description": { "required": true, "type": "text", "value": "sudden, agonizing headache—a real thunderclap—and transient vision dimming, followed by persistent nagging headache", } }
+Agent: I see. Has this ever happened before? Patient: I’ve never had a headache that bad or any visual symptoms before. { "previous_instances": { "value": false, } }
+Agent: Ask whether the patient has any visual loss. Patient: Yes, I had one episode of vision loss that was very brief. { "visual_loss_present": { "value": true, } }
+Agent: Could you tell me a bit more about the visual loss? Patient: It was a sudden dimming in the periphery of my right eye. It felt like a shadow came across it. { "vl_description": { "value": "sudden dimming in the periphery of my right eye, like a shadow", } }
+Agent: Can I ask if the vision is affected in both eyes or just one? Patient: It was just my right eye. { "vl_laterality": { "value": "monocular_right", } }
+Agent: Which eye is affected? Patient: The right eye.
+Agent: And can you describe which part of the field of vision is affected? Patient: It was the outer part, the peripheral vision, that dimmed. { "vl_field": { "value": "peripheral", } }
+Agent: At its worst, in the affected area, how much could you see? Patient: It was partial loss; it dimmed severely but didn't go completely black. { "vl_degree": { "value": "partial", } }
+Agent: Could you describe what you could or couldn't see? For example, could you read fine print, count fingers, see hand movements? Patient: My central vision was fine, but the sides were dim. { "vl_acuity_description": { "value": "central vision was fine, peripheral vision dimmed", } }
+Agent: When did this start? Patient: Two weeks ago, at the same moment the thunderclap headache hit. { "vl_onset": { "value": "two weeks ago", } }
+Agent: How quickly did it develop? Patient: Instantly—acute onset. { "vl_onset_speed": { "value": "acute", } }
+Agent: Is it constant or does it come and go? Patient: It was a transient episode. It resolved completely. { "vl_temporal_pattern": { "value": "transient", } }
+Agent: How long does each episode last? Patient: About 30 seconds. { "vl_episode_duration": { "value": "about 30 seconds", } }
+Agent: How often do you get these episodes? Patient: It was just the one episode when the severe headache started. { "vl_episode_frequency": { "value": "one episode only", } }
+Agent: Is anything specific missing from your vision, or are you having difficulty recognising things, for example, certain things, people, or faces? Patient: No, I can recognise things fine. { "agnosia_present": { "value": false, } }
+Agent: Are you experiencing any visual hallucinations? Patient: No. { "hallucinations_present": { "value": false, } }
+Agent: Are you experiencing any problems with your colour vision? Patient: No. { "cp_present": { "value": false, } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights? Patient: No. { "vp_present": { "value": false, } }
+Agent: Do you have double vision (diplopia)? Patient: No. { "dp_present": { "value": false, } }
+Agent: Do you feel dizzy or have vertigo? Patient: I get frequent mild dizzy spells, but I wouldn't call it true vertigo. { "vertigo_present": { "value": false, } }
+Agent: Any sensation of images or your eyes moving rapidly? Patient: No. { "nystagmus_present": { "value": false, } }
+Agent: Are you experiencing a headache? Patient: Yes, I am. The main reason I'm here is this nagging headache I've had for two weeks. { "h_present": { "value": true, } }
+Agent: Could you tell me a bit more about the headache? Patient: It’s generalized, not localized, and it’s nagging. The initial one two weeks ago was excruciating—a 10 out of 10. { "h_description": { "value": "nagging, generalized headache; initial onset two weeks ago was excruciating 'thunderclap'", } }
+Agent: When did this headache start? Patient: Two weeks ago, suddenly. { "h_onset": { "value": "two weeks ago", } }
+Agent: Where is the headache located? Patient: It's general across my head. { "h_location": { "value": "generalized", } }
+Agent: Is it episodic, coming and going, or persistent and constant? Patient: The severe pain was transient, but the nagging pain has been permanent since. { "h_temporal_pattern": { "value": "permanent", } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet? Patient: I haven’t tried heavy lifting, but I haven't noticed it worsen when straining. { "h_worse_on_straining": { "value": false, } }
+Agent: Is it worse at any time of day, like morning or evening? Patient: No particular time of day. { "h_time_of_day": { "value": "none", } }
+Agent: Do you have eye pain? Patient: No. { "ep_present": { "value": false, } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye? Patient: No. { "dry_gritty_sensation": { "value": false, } }
+Agent: Any change in the appearance of your eyes or surrounding areas? Patient: No. { "appearance_changes_present": { "value": false, } }
+Agent: For this episode, did you have any contact with a healthcare professional? Patient: No, I waited until my trip was over to see someone. { "hc_contact_occurred": { "value": false, } }
+Agent: Any other associated symptoms that you haven't mentioned? Patient: Just the frequent mild dizzy spells and feeling slightly unbalanced when walking quickly. { "other_symptoms": { "value": "frequent mild dizzy spells; slightly unbalanced when walking quickly", } }
+Agent: How has this episode affected you? Patient: It makes me nervous to travel or drive, and the constant nagging pain is exhausting. { "functional_impact": { "value": "exhaustion from constant pain; nervous about travel/driving due to dizziness/headache", } }
+Agent: Because of the chronic nature of your visual issue, I need to ask you some questions about potential pituitary or nutritional issues. Have you noticed any change in your appearance, like your face, hands, or feet growing larger? Patient: No, my appearance is the same. { "acromegalic_features": { "value": false, } }
+Agent: Do you have any nipple discharge? Patient: No. { "nipple_discharge": { "value": false, } }
+Agent: Have you experienced erectile dysfunction? Patient: No. { "erectile_dysfunction": { "value": false, } }
+Agent: Have you noticed any breast growth or enlargement? Patient: No. { "breast_growth": { "value": false, } }
+Agent: Do you feel hot or cold all the time? Patient: No. { "temperature_intolerance": { "value": false, } }
+Agent: Do you have any dietary restrictions, digestive issues, or have you had stomach or gut surgery? Patient: I eat a normal diet, but I was severely dehydrated during my recent trip. No surgeries. { "nutritional_factors": { "value": "no dietary restrictions/issues; history of severe dehydration recently", } }
+Agent: Are you taking any of these medications: ethambutol, amiodarone, methotrexate, trimethoprim, or regular antacids like omeprazole? Patient: No, just over-the-counter pain relievers for the headache that haven't helped much. { "toxic_medications": { "value": "none of those listed", } }
+Agent: Do you have scalp tenderness ?  Patient: No, my scalp doesn't hurt when I touch it, even where the headache is located. { "scalp_tenderness": { "value": false, "required": "conditional" } }
+Agent: Do you have jaw pain when chewing  Patient: No, I haven't had any trouble with pain while chewing. { "jaw_claudication": { "value": false, "required": "conditional" } }
+Agent: Do you have pain in your shoulders or around your shoulder girdle ?  Patient: No, I don't have any body aches or pain in my shoulders. { "shoulder_girdle_pain": { "value": false, "required": "conditional" } }
+Consultation 12
+Agent: Hello, I’m your ophthalmology assistant. I’m here to help gather information to help your ophthalmology consultant prepare for your appointment. This may help them to decide if you need any investigations before your first appointment. I’m afraid I can’t give you medical advice or make diagnoses — that’s for your consultant to do. But if you’d like, you can also tell me any specific questions or concerns you’d like the consultant to address, and I’ll pass them along so they can answer them during the appointment. Let’s get started. To begin with, could you tell me what’s brought you to the clinic? Patient: My biggest issue is that I seem to be missing the left side of my vision, and I feel really slow mentally. This all started about a month ago with worsening headaches. { "presenting_complaint_description": { "value": "missing the left side of my vision and mental slowness, following worsening headaches", } }
+Agent: I understand this is concerning. Has this ever happened before? Patient: No, I’ve had headaches and lupus flares, but never a vision problem like this. { "previous_instances": { "value": false, } }
+Agent: Ask whether the patient has any visual loss. Patient: Yes, the missing vision part is a form of visual loss. { "visual_loss_present": { "value": true, } }
+Agent: Could you tell me a bit more about the visual loss? Patient: The entire left side of my visual field seems slightly missing, like a shadow. I checked and the defect respects the vertical midline. { "vl_description": { "value": "missing the entire left side of my visual field, like a shadow, respecting the vertical midline", } }
+Agent: Can I ask if the vision is affected in both eyes or just one? Patient: It affects both eyes, but only the left half of the vision. { "vl_laterality": { "value": "binocular", } }
+Agent: Were both eyes affected at the same time, or did one start first? Patient: It seemed to happen simultaneously in both eyes. { "vl_onset_simultaneity": { "value": "simultaneous", } }
+Agent: And can you describe which part of the field of vision is affected? Patient: The left side of my vision. { "vl_field": { "value": "left side (hemianopia)", } }
+Agent: At its worst, in the affected area, how much could you see? Patient: It’s a definite partial loss, not completely black, but severely degraded. { "vl_degree": { "value": "partial", } }
+Agent: Could you describe what you could or couldn't see? For example, could you read fine print, count fingers, see hand movements? Patient: I can see clearly on the right side, but I often miss things entirely on the left side, which is why I’m struggling to concentrate. { "vl_acuity_description": { "value": "clear vision on the right side, but inability to see on the entire left visual field", } }
+Agent: When did this start? Patient: About one month ago. { "vl_onset": { "value": "one month ago", } }
+Agent: How quickly did it develop? Patient: It started gradually, so I would say chronic development. { "vl_onset_speed": { "value": "chronic", } }
+Agent: Is it constant or does it come and go? Patient: It is permanent; the loss has stabilized but hasn't gone away. { "vl_temporal_pattern": { "value": "permanent", } }
+Agent: After it started, did it keep getting worse? Patient: It worsened over the first two weeks, but then stabilized. { "vl_worsening": { "value": true, } }
+Agent: Was it still worsening after 2 weeks? Patient: No, it stabilized after two weeks. { "vl_worsening_after_2_weeks": { "value": false, } }
+Agent: And at any point did it start to improve? Patient: No, it hasn't improved. { "vl_improved": { "value": false, } }
+Agent: Is anything specific missing from your vision, or are you having difficulty recognising things, for example, certain things, people, or faces? Patient: Not in that sense, but I feel cognitively slow. I have persistent difficulty concentrating. { "agnosia_present": { "value": false, } }
+Agent: Are you experiencing any visual hallucinations? Patient: No. { "hallucinations_present": { "value": false, } }
+Agent: Are you experiencing any problems with your colour vision? Patient: No, my colors look fine. { "cp_present": { "value": false, } }
+Agent: Are you experiencing shimmering arcs, zig zags, or flashing lights? Patient: No. { "vp_present": { "value": false, } }
+Agent: Do you have double vision (diplopia)? Patient: No. { "dp_present": { "value": false, } }
+Agent: Do you feel dizzy or have vertigo? Patient: No. { "vertigo_present": { "value": false, } }
+Agent: Any sensation of images or your eyes moving rapidly? Patient: No. { "nystagmus_present": { "value": false, } }
+Agent: Are you experiencing a headache? Patient: Yes, increasing headaches over the last six weeks. { "h_present": { "value": true, } }
+Agent: Could you tell me a bit more about the headache? Patient: They feel like increasing generalized pressure across my head. { "h_description": { "value": "increasing generalized pressure", } }
+Agent: When did this headache start? Patient: About six weeks ago. { "h_onset": { "value": "six weeks ago", } }
+Agent: Where is the headache located? Patient: Generalized. { "h_location": { "value": "generalized", } }
+Agent: Is it episodic, coming and going, or persistent and constant? Patient: They are persistent now. { "h_temporal_pattern": { "value": "permanent", } }
+Agent: Does it worsen with straining, like lifting heavy objects or pushing on the toilet? Patient: No. { "h_worse_on_straining": { "value": false, } }
+Agent: Is it worse at any time of day, like morning or evening? Patient: It sometimes wakes me up in the morning. { "h_time_of_day": { "value": "morning", } }
+Agent: Do you have eye pain? Patient: No. { "ep_present": { "value": false, } }
+Agent: Do you have a dry or gritty sensation, or feel like there's something in your eye? Patient: No. { "dry_gritty_sensation": { "value": false, } }
+Agent: Any change in the appearance of your eyes or surrounding areas? Patient: No. { "appearance_changes_present": { "value": false, } }
+Agent: For this episode, did you have any contact with a healthcare professional? Patient: Yes, I spoke to my rheumatologist about the SLE flare-up, but they didn't assess my vision yet. { "hc_contact_occurred": { "value": true, } }
+Agent: Did you have any investigations or receive any treatments? Please could you list them. Patient: Just some increased dose of my usual SLE medication. { "hc_investigations_and_treatments": { "value": "increased dose of SLE medication", } }
+Agent: Any other associated symptoms that you haven't mentioned? Patient: Aside from the cognitive slowness, I've had increased joint aches and fatigue, which is part of my SLE flare-up. { "other_symptoms": { "value": "cognitive slowness, difficulty concentrating, increased joint aches and fatigue (SLE flare)", } }
+Agent: How has this episode affected you? Patient: It has severely impacted my ability to perform daily tasks, especially reading and following instructions. { "functional_impact": { "value": "severely impacted ability to perform daily tasks, especially reading and following complex instructions", } }
+Agent: Because of the chronic visual issue, I need to ask you some questions about potential pituitary or nutritional issues. Have you noticed any change in your appearance, like your face, hands, or feet growing larger? Patient: No. { "acromegalic_features": { "value": false, } }
+Agent: Do you have any nipple discharge? Patient: No. { "nipple_discharge": { "value": false, } }
+Agent: Have you noticed any change in your menstrual periods? Patient: No change. { "menstrual_changes": { "value": false, } }
+Agent: Do you feel hot or cold all the time? Patient: No. { "temperature_intolerance": { "value": false, } }
+Agent: Do you have any dietary restrictions, digestive issues, or have you had stomach or gut surgery? Patient: No, I take good care of myself due to my SLE. { "nutritional_factors": { "value": "none", } }
+Agent: Are you taking any of these medications: ethambutol, amiodarone, methotrexate, trimethoprim, or regular antacids like omeprazole? Patient: I’m only taking my regular lupus medication and the increased dose for the flare. { "toxic_medications": { "value": "none of those listed", } }
+Agent: Are you having difficulty reading words? Patient: Yes, I struggle immensely when reading because of the cognitive slowing. { "difficulty_reading": { "value": true, } }
+Agent: If you spell out a word letter by letter, can you then recognise it? Patient: Yes, if I force myself to sound it out, I can eventually recognize the word. { "can_read_by_spelling": { "value": true, } }
+Agent: Have you had trouble recognizing people you know, like family members or friends? Patient: No. { "difficulty_recognising_people": { "value": false, } }
+Agent: Are you having trouble finding your way around places you know well, like your home or neighborhood? Patient: No, I can navigate fine. { "trouble_navigating": { "value": false, } }
+Agent: When you look at a busy scene, can you see the whole picture, or do you only see one thing at a time? Patient: I can see the whole picture, but the left side is shadowy. { "can_see_whole_picture": { "value": true, } }
+Agent: If you watch water being poured, does it look frozen or static? Patient: No, things move normally. { "can_see_moving_water": { "value": true, } }

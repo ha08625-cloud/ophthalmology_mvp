@@ -1,0 +1,869 @@
+{
+  "conditional_definitions": {
+    "partial_visual_loss": "patient reports they can see something but it's reduced/blurred/dim",
+    "partial_visual_loss_worsened": "patient confirmed partial loss continued worsening after onset",
+    "partial_monocular_loss": "patient has partial vision loss in one eye only",
+    "complete_monocular_loss": "patient has complete vision loss in one eye only"
+  },
+
+  "conditions": {
+    "vision_loss_already_described": {
+      "check": "vl_present == True AND vl_onset != None"
+    },
+    "binocular": {
+      "check": "vl_laterality == 'binocular'"
+    },
+    "monocular": {
+      "check": "vl_laterality in ['monocular_left', 'monocular_right']"
+    },
+    "partial_visual_loss": {
+      "check": "vl_degree == 'partial'"
+    },
+    "worsening": {
+      "check": "vl_worsening == True"
+    },
+    "partial_monocular_loss": {
+      "check": "vl_laterality in ['monocular_left', 'monocular_right'] AND vl_degree != 'total'"
+    },
+    "complete_monocular_loss": {
+      "check": "vl_laterality in ['monocular_left', 'monocular_right'] AND vl_degree == 'total'"
+    },
+    "vl_intermittent": {
+      "check": "vl_temporal_pattern == 'intermittent'"
+    },
+    "agnosia": {
+      "check": "agnosia_present == True"
+    },
+    "headache": {
+      "check": "h_present == True"
+    },
+    "eye_pain": {
+      "check": "ep_present == True"
+    },
+    "hallucinations_present": {
+      "check": "hallucinations_present == True"
+    },
+    "cp_present": {
+      "check": "cp_present == True"
+    },
+    "vp_present": {
+      "check": "vp_present == True"
+    },
+    "dp_present": {
+      "check": "dp_present == True"
+    },
+    "hc_contact_occurred": {
+      "check": "hc_contact_occurred == True"
+    },
+    "appearance_changes_present": {
+      "check": "appearance_changes_present == True"
+    },
+    "alexia": {
+      "check": "difficulty_reading == True"
+    },
+    "prosopagnosia": {
+      "check": "difficulty_recognising_people == True"
+    },
+    "akinetopsia": {
+      "check": "can_see_moving_water == False"
+    }
+  },
+
+  "trigger_conditions": {
+    "transient_acute_monocular_loss": {
+      "check": "vl_laterality in ['monocular_left', 'monocular_right'] AND vl_onset_speed == 'acute' AND vl_temporal_pattern == 'transient'",
+      "activates": "block_2"
+    },
+    "altitudinal_defect": {
+      "check": "vl_field != None AND ('upper half' in vl_field.lower() OR 'lower half' in vl_field.lower())",
+      "activates": "block_2"
+    },
+    "persistent_chronic_headache": {
+      "check": "h_present == True AND h_temporal_pattern == 'permanent' AND h_onset_weeks >= 6",
+      "activates": "block_2"
+    },
+    "subacute_monocular_loss_hours_days": {
+      "check": "vl_laterality in ['monocular_left', 'monocular_right'] AND vl_onset_speed == 'subacute'",
+      "activates": "block_1"
+    },
+    "chronic_visual_loss": {
+      "check": "vl_present == True AND vl_onset_speed == 'chronic'",
+      "activates": ["block_3", "block_4"]
+    },
+    "rashes_or_eye_infection": {
+      "check": "ac_rashes == True OR ac_discharge == True",
+      "activates": "block_5"
+    },
+    "agnosia": {
+      "check": "agnosia_present == True",
+      "activates": "block_6"
+    },
+    "hemichromatopsia": {
+      "check": "cp_field != None AND ('left side' in cp_field.lower() OR 'right side' in cp_field.lower())",
+      "activates": "block_6"
+    }
+  },
+
+  "sections": {
+    "chief_complaint": [
+      {
+        "id": "chief_1",
+        "type": "probe",
+        "question": "Let's get started. To begin with, could you tell me what's brought you to the clinic?",
+        "field": "presenting_complaint_description",
+        "field_type": "text"
+      },
+      {
+        "id": "chief_2",
+        "type": "probe",
+        "question": "Has this ever happened before?",
+        "field": "previous_instances",
+        "field_type": "boolean"
+      }
+    ],
+
+    "vision_loss": [
+      {
+        "id": "vl_1",
+        "type": "conditional",
+        "question": "Could you tell me a bit more about the visual loss?",
+        "condition": "vision_loss_already_described",
+        "field": "vl_description",
+        "field_type": "text",
+        "comment": "Asked if patient already mentioned vision loss in chief complaint"
+      },
+      {
+        "id": "vl_2",
+        "type": "probe",
+        "question": "Can I ask if the vision is affected in both eyes or just one?",
+        "field": "vl_laterality",
+        "field_type": "categorical",
+        "valid_values": ["monocular", "binocular"],
+        "comment": "Initial laterality question - if monocular, triggers vl_3 follow-up"
+      },
+      {
+        "id": "vl_3",
+        "type": "conditional",
+        "question": "Which eye is affected?",
+        "condition": "monocular",
+        "field": "vl_laterality",
+        "field_type": "categorical",
+        "valid_values": ["monocular_left", "monocular_right"],
+        "comment": "Follow-up to specify which eye - updates vl_laterality field"
+      },
+      {
+        "id": "vl_4",
+        "type": "conditional",
+        "question": "Were both eyes affected at the same time, or did one start first?",
+        "condition": "binocular",
+        "field": "vl_onset_simultaneity",
+        "field_type": "categorical",
+        "valid_values": ["simultaneous", "sequential"],
+        "comment": "If sequential, this would be bilateral_monocular, not true binocular"
+      },
+      {
+        "id": "vl_5",
+        "type": "probe",
+        "question": "And can you describe which part of the field of vision is affected?",
+        "field": "vl_field",
+        "field_type": "text",
+        "comment": "Free text - may contain 'upper half', 'lower half', 'peripheral', etc."
+      },
+      {
+        "id": "vl_6",
+        "type": "probe",
+        "question": "At its worst, in the affected area, how much could you see?",
+        "field": "vl_degree",
+        "field_type": "categorical",
+        "valid_values": ["partial", "total"],
+        "comment": "Categorization for trigger logic"
+      },
+      {
+        "id": "vl_7",
+        "type": "probe",
+        "question": "Could you describe what you could or couldn't see? For example, could you read fine print, count fingers, see hand movements?",
+        "field": "vl_acuity_description",
+        "field_type": "text",
+        "comment": "Detailed acuity description - complements vl_degree"
+      },
+      {
+        "id": "vl_8",
+        "type": "probe",
+        "question": "When did this start?",
+        "field": "vl_onset",
+        "field_type": "text",
+        "comment": "Date or timeframe - e.g. '3 months ago', 'last Tuesday'"
+      },
+      {
+        "id": "vl_9",
+        "type": "probe",
+        "question": "How quickly did it develop?",
+        "field": "vl_onset_speed",
+        "field_type": "categorical",
+        "valid_values": ["acute", "subacute", "chronic"],
+        "definitions": {
+          "acute": "seconds to minutes",
+          "subacute": "hours to days",
+          "chronic": "weeks or longer"
+        }
+      },
+      {
+        "id": "vl_10",
+        "type": "probe",
+        "question": "Is it constant or does it come and go?",
+        "field": "vl_temporal_pattern",
+        "field_type": "categorical",
+        "valid_values": ["permanent", "transient", "intermittent"],
+        "definitions": {
+          "permanent": "came on and didn't improve",
+          "transient": "came on then resolved completely",
+          "intermittent": "comes and goes repeatedly"
+        }
+      },
+      {
+        "id": "vl_11",
+        "type": "conditional",
+        "question": "How long does each episode last?",
+        "condition": "vl_intermittent",
+        "field": "vl_episode_duration",
+        "field_type": "text"
+      },
+      {
+        "id": "vl_12",
+        "type": "conditional",
+        "question": "How often do you get these episodes?",
+        "condition": "vl_intermittent",
+        "field": "vl_episode_frequency",
+        "field_type": "text"
+      },
+      {
+        "id": "vl_13",
+        "type": "conditional",
+        "question": "After it started, did it keep getting worse?",
+        "condition": "partial_visual_loss",
+        "field": "vl_worsening",
+        "field_type": "boolean"
+      },
+      {
+        "id": "vl_14",
+        "type": "conditional",
+        "question": "Was it still worsening after 2 weeks?",
+        "condition": "worsening",
+        "field": "vl_worsening_after_2_weeks",
+        "field_type": "boolean"
+      },
+      {
+        "id": "vl_15",
+        "type": "conditional",
+        "question": "And at any point did it start to improve?",
+        "condition": "partial_visual_loss",
+        "field": "vl_improved",
+        "field_type": "boolean"
+      },
+      {
+        "id": "vl_16",
+        "type": "conditional",
+        "question": "Do you ever have brief blackouts in vision when you look around?",
+        "condition": "partial_monocular_loss",
+        "field": "vl_blackouts",
+        "field_type": "boolean"
+      },
+      {
+        "id": "vl_17",
+        "type": "conditional",
+        "question": "Do you have any visual loss in your other eye?",
+        "condition": "complete_monocular_loss",
+        "field": "vl_other_eye_affected",
+        "field_type": "boolean"
+      },
+      {
+        "id": "vl_18",
+        "type": "probe",
+        "question": "Is anything specific missing from your vision, or are you having difficulty recognising things, for example, certain things, people, or faces?",
+        "field": "agnosia_present",
+        "field_type": "boolean",
+        "comment": "Screens for visual agnosia"
+      },
+      {
+        "id": "vl_19",
+        "type": "conditional",
+        "question": "Can you describe it to me in more detail?",
+        "condition": "agnosia",
+        "field": "agnosia_description",
+        "field_type": "text"
+      }
+    ],
+
+    "visual_disturbances": [
+      {
+        "id": "vd_1",
+        "type": "probe",
+        "question": "Are you experiencing any visual hallucinations?",
+        "field": "hallucinations_present",
+        "field_type": "boolean"
+      },
+      {
+        "id": "vd_2",
+        "type": "conditional",
+        "question": "Can you describe what you are seeing?",
+        "condition": "hallucinations_present",
+        "field": "hallucinations_description",
+        "field_type": "text"
+      },
+      {
+        "id": "vd_3",
+        "type": "probe",
+        "question": "Are you experiencing any problems with your colour vision?",
+        "field": "cp_present",
+        "field_type": "boolean"
+      },
+      {
+        "id": "vd_4",
+        "type": "conditional",
+        "question": "When did this start?",
+        "condition": "cp_present",
+        "field": "cp_onset",
+        "field_type": "text"
+      },
+      {
+        "id": "vd_5",
+        "type": "conditional",
+        "question": "Is the loss of colour just in one eye, or in both?",
+        "condition": "cp_present",
+        "field": "cp_laterality",
+        "field_type": "categorical",
+        "valid_values": ["monocular", "binocular"]
+      },
+      {
+        "id": "vd_6",
+        "type": "conditional",
+        "question": "Is the loss of colour in one part of your field of vision, for example the left side of your vision or the upper half of your vision?",
+        "condition": "cp_present",
+        "field": "cp_field",
+        "field_type": "text",
+        "comment": "May contain 'left side', 'right side' - triggers hemichromatopsia"
+      },
+      {
+        "id": "vd_7",
+        "type": "conditional",
+        "question": "Are any particular colours affected (e.g. red desaturation)?",
+        "condition": "cp_present",
+        "field": "cp_colours_affected",
+        "field_type": "text"
+      },
+      {
+        "id": "vd_8",
+        "type": "probe",
+        "question": "Are you experiencing shimmering arcs, zig zags, or flashing lights?",
+        "field": "vp_present",
+        "field_type": "boolean",
+        "comment": "Positive visual phenomena"
+      },
+      {
+        "id": "vd_9",
+        "type": "conditional",
+        "question": "When did this start?",
+        "condition": "vp_present",
+        "field": "vp_onset",
+        "field_type": "text"
+      },
+      {
+        "id": "vd_10",
+        "type": "conditional",
+        "question": "Is this happening in one eye, or in both?",
+        "condition": "vp_present",
+        "field": "vp_laterality",
+        "field_type": "categorical",
+        "valid_values": ["monocular", "binocular"]
+      },
+      {
+        "id": "vd_11",
+        "type": "conditional",
+        "question": "Can you describe these visual phenomena?",
+        "condition": "vp_present",
+        "field": "vp_description",
+        "field_type": "text"
+      },
+      {
+        "id": "vd_12",
+        "type": "conditional",
+        "question": "How long do these episodes last?",
+        "condition": "vp_present",
+        "field": "vp_duration",
+        "field_type": "text"
+      },
+      {
+        "id": "vd_13",
+        "type": "conditional",
+        "question": "Where in your field of vision do these occur?",
+        "condition": "vp_present",
+        "field": "vp_location",
+        "field_type": "text"
+      },
+      {
+        "id": "vd_14",
+        "type": "conditional",
+        "question": "Are these phenomena ever followed by a headache?",
+        "condition": "vp_present",
+        "field": "vp_followed_by_headache",
+        "field_type": "boolean"
+      },
+      {
+        "id": "vd_15",
+        "type": "probe",
+        "question": "Do you have double vision (diplopia)?",
+        "field": "dp_present",
+        "field_type": "boolean"
+      },
+      {
+        "id": "vd_16",
+        "type": "conditional",
+        "question": "When did the double vision start?",
+        "condition": "dp_present",
+        "field": "dp_onset",
+        "field_type": "text"
+      },
+      {
+        "id": "vd_17",
+        "type": "conditional",
+        "question": "Does the double vision go away if you close one eye, or is it still there?",
+        "condition": "dp_present",
+        "field": "dp_laterality",
+        "field_type": "categorical",
+        "valid_values": ["monocular", "binocular"],
+        "comment": "Monocular diplopia = same eye problem; binocular = alignment problem"
+      },
+      {
+        "id": "vd_18",
+        "type": "conditional",
+        "question": "Is it worse in any gaze direction?",
+        "condition": "dp_present",
+        "field": "dp_gaze_dependence",
+        "field_type": "text"
+      },
+      {
+        "id": "vd_19",
+        "type": "probe",
+        "question": "Do you feel dizzy or have vertigo?",
+        "field": "vertigo_present",
+        "field_type": "boolean"
+      },
+      {
+        "id": "vd_20",
+        "type": "probe",
+        "question": "Any sensation of images or your eyes moving rapidly?",
+        "field": "nystagmus_present",
+        "field_type": "boolean"
+      }
+    ],
+
+    "headache": [
+      {
+        "id": "h_1",
+        "type": "probe",
+        "question": "Are you experiencing a headache?",
+        "field": "h_present",
+        "field_type": "boolean"
+      },
+      {
+        "id": "h_2",
+        "type": "conditional",
+        "question": "Could you tell me a bit more about the headache?",
+        "condition": "headache",
+        "field": "h_description",
+        "field_type": "text"
+      },
+      {
+        "id": "h_3",
+        "type": "conditional",
+        "question": "When did this headache start?",
+        "condition": "headache",
+        "field": "h_onset",
+        "field_type": "text"
+      },
+      {
+        "id": "h_4",
+        "type": "conditional",
+        "question": "Where is the headache located?",
+        "condition": "headache",
+        "field": "h_location",
+        "field_type": "text"
+      },
+      {
+        "id": "h_5",
+        "type": "conditional",
+        "question": "Is it episodic, coming and going, or persistent and constant?",
+        "condition": "headache",
+        "field": "h_temporal_pattern",
+        "field_type": "categorical",
+        "valid_values": ["permanent", "transient", "intermittent"],
+        "comment": "Matches vl_temporal_pattern terminology"
+      },
+      {
+        "id": "h_6",
+        "type": "conditional",
+        "question": "Does it worsen with straining, like lifting heavy objects or pushing on the toilet?",
+        "condition": "headache",
+        "field": "h_worse_on_straining",
+        "field_type": "boolean"
+      },
+      {
+        "id": "h_7",
+        "type": "conditional",
+        "question": "Is it worse at any time of day, like morning or evening?",
+        "condition": "headache",
+        "field": "h_time_of_day",
+        "field_type": "categorical",
+        "valid_values": ["morning", "evening", "none"]
+      }
+    ],
+
+    "eye_pain_and_changes": [
+      {
+        "id": "ep_1",
+        "type": "probe",
+        "question": "Do you have eye pain?",
+        "field": "ep_present",
+        "field_type": "boolean"
+      },
+      {
+        "id": "ep_2",
+        "type": "conditional",
+        "question": "When did the eye pain start?",
+        "condition": "eye_pain",
+        "field": "ep_onset",
+        "field_type": "text"
+      },
+      {
+        "id": "ep_3",
+        "type": "conditional",
+        "question": "On a scale of 1 to 10, how severe is the pain?",
+        "condition": "eye_pain",
+        "field": "ep_severity",
+        "field_type": "integer",
+        "valid_range": [1, 10]
+      },
+      {
+        "id": "ep_4",
+        "type": "conditional",
+        "question": "Is the pain worse with eye movements?",
+        "condition": "eye_pain",
+        "field": "ep_worse_on_eye_movements",
+        "field_type": "boolean"
+      },
+      {
+        "id": "ep_5",
+        "type": "probe",
+        "question": "Do you have a dry or gritty sensation, or feel like there's something in your eye?",
+        "field": "dry_gritty_sensation",
+        "field_type": "boolean"
+      },
+      {
+        "id": "ep_6",
+        "type": "probe",
+        "question": "Any change in the appearance of your eyes or surrounding areas?",
+        "field": "appearance_changes_present",
+        "field_type": "boolean"
+      },
+      {
+        "id": "ep_7",
+        "type": "conditional",
+        "question": "Do you have redness or a pink appearance?",
+        "condition": "appearance_changes_present",
+        "field": "ac_redness",
+        "field_type": "boolean"
+      },
+      {
+        "id": "ep_8",
+        "type": "conditional",
+        "question": "Do you have any discharge?",
+        "condition": "appearance_changes_present",
+        "field": "ac_discharge",
+        "field_type": "boolean"
+      },
+      {
+        "id": "ep_9",
+        "type": "conditional",
+        "question": "Has one or both eyes begun to bulge (proptosis)?",
+        "condition": "appearance_changes_present",
+        "field": "ac_proptosis",
+        "field_type": "boolean"
+      },
+      {
+        "id": "ep_10",
+        "type": "conditional",
+        "question": "Is one of your eyelids drooping (ptosis)?",
+        "condition": "appearance_changes_present",
+        "field": "ac_ptosis",
+        "field_type": "boolean"
+      },
+      {
+        "id": "ep_11",
+        "type": "conditional",
+        "question": "Have you noticed any changes in your pupils?",
+        "condition": "appearance_changes_present",
+        "field": "ac_pupillary_changes",
+        "field_type": "boolean"
+      },
+      {
+        "id": "ep_12",
+        "type": "conditional",
+        "question": "Do you have any rashes around your eyes?",
+        "condition": "appearance_changes_present",
+        "field": "ac_rashes",
+        "field_type": "boolean"
+      }
+    ],
+
+    "healthcare_contacts": [
+      {
+        "id": "hc_1",
+        "type": "probe",
+        "question": "For this episode, did you have any contact with a healthcare professional?",
+        "field": "hc_contact_occurred",
+        "field_type": "boolean"
+      },
+      {
+        "id": "hc_2",
+        "type": "conditional",
+        "question": "Did you have any investigations or receive any treatments? Please could you list them.",
+        "condition": "hc_contact_occurred",
+        "field": "hc_investigations_and_treatments",
+        "field_type": "text",
+        "comment": "Response Parser will separate investigations from treatments"
+      }
+    ],
+
+    "other_symptoms": [
+      {
+        "id": "os_1",
+        "type": "probe",
+        "question": "Any other associated symptoms that you haven't mentioned?",
+        "field": "other_symptoms",
+        "field_type": "text"
+      }
+    ],
+
+    "functional_impact": [
+      {
+        "id": "fi_1",
+        "type": "probe",
+        "question": "How has this episode affected you?",
+        "field": "functional_impact",
+        "field_type": "text",
+        "comment": "Impact on daily activities, work, driving, etc."
+      }
+    ]
+  },
+
+  "follow_up_blocks": {
+    "block_1": {
+      "name": "Optic Neuritis Screen",
+      "questions": [
+        {
+          "id": "b1_1",
+          "type": "probe",
+          "question": "Have you had previous episodes of visual loss?",
+          "field": "previous_visual_loss_episodes",
+          "field_type": "boolean"
+        },
+        {
+          "id": "b1_2",
+          "type": "probe",
+          "question": "Do your symptoms worsen with exercise or heat exposure (Uhthoff phenomenon)?",
+          "field": "uhthoff_phenomenon",
+          "field_type": "boolean"
+        },
+        {
+          "id": "b1_3",
+          "type": "probe",
+          "question": "Do moving objects appear closer or further than they are (Pulfrich phenomenon)?",
+          "field": "pulfrich_phenomenon",
+          "field_type": "boolean"
+        }
+      ]
+    },
+    "block_2": {
+      "name": "Giant Cell Arteritis Screen",
+      "questions": [
+        {
+          "id": "b2_1",
+          "type": "probe",
+          "question": "Do you have scalp tenderness?",
+          "field": "scalp_tenderness",
+          "field_type": "boolean"
+        },
+        {
+          "id": "b2_2",
+          "type": "probe",
+          "question": "Do you have jaw pain when chewing (jaw claudication)?",
+          "field": "jaw_claudication",
+          "field_type": "boolean"
+        },
+        {
+          "id": "b2_3",
+          "type": "probe",
+          "question": "Do you have pain in your shoulders or around your shoulder girdle?",
+          "field": "shoulder_girdle_pain",
+          "field_type": "boolean"
+        }
+      ]
+    },
+    "block_3": {
+      "name": "Pituitary Dysfunction Screen",
+      "questions": [
+        {
+          "id": "b3_1",
+          "type": "probe",
+          "question": "Have you noticed any change in your appearance, like your face, hands, or feet growing larger?",
+          "field": "acromegalic_features",
+          "field_type": "boolean"
+        },
+        {
+          "id": "b3_2",
+          "type": "probe",
+          "question": "Do you have any nipple discharge?",
+          "field": "nipple_discharge",
+          "field_type": "boolean"
+        },
+        {
+          "id": "b3_3",
+          "type": "probe",
+          "question": "Have you noticed any change in your menstrual periods?",
+          "field": "menstrual_changes",
+          "field_type": "boolean",
+          "comment": "Ask if female"
+        },
+        {
+          "id": "b3_4",
+          "type": "probe",
+          "question": "Have you experienced erectile dysfunction?",
+          "field": "erectile_dysfunction",
+          "field_type": "boolean",
+          "comment": "Ask if male"
+        },
+        {
+          "id": "b3_5",
+          "type": "probe",
+          "question": "Have you noticed any breast growth or enlargement?",
+          "field": "breast_growth",
+          "field_type": "boolean",
+          "comment": "Ask if male"
+        },
+        {
+          "id": "b3_6",
+          "type": "probe",
+          "question": "Do you feel hot or cold all the time?",
+          "field": "temperature_intolerance",
+          "field_type": "boolean"
+        }
+      ]
+    },
+    "block_4": {
+      "name": "Nutritional/Toxic Optic Neuropathy Screen",
+      "questions": [
+        {
+          "id": "b4_1",
+          "type": "probe",
+          "question": "Do you have any dietary restrictions, digestive issues, or have you had stomach or gut surgery?",
+          "field": "nutritional_factors",
+          "field_type": "text"
+        },
+        {
+          "id": "b4_2",
+          "type": "probe",
+          "question": "Are you taking any of these medications: ethambutol, amiodarone, methotrexate, trimethoprim, or regular antacids like omeprazole?",
+          "field": "toxic_medications",
+          "field_type": "text"
+        }
+      ]
+    },
+    "block_5": {
+      "name": "Cat Scratch Disease Screen",
+      "questions": [
+        {
+          "id": "b5_1",
+          "type": "probe",
+          "question": "Have you had any exposure to cats? Specifically, have you been scratched by a cat?",
+          "field": "cat_exposure",
+          "field_type": "text"
+        }
+      ]
+    },
+    "block_6": {
+      "name": "Higher Visual Processing Screen",
+      "questions": [
+        {
+          "id": "b6_1",
+          "type": "probe",
+          "question": "Are you having difficulty reading words?",
+          "field": "difficulty_reading",
+          "field_type": "boolean",
+          "comment": "Screens for alexia"
+        },
+        {
+          "id": "b6_2",
+          "type": "conditional",
+          "question": "If you spell out a word letter by letter, can you then recognise it?",
+          "condition": "alexia",
+          "field": "can_read_by_spelling",
+          "field_type": "boolean"
+        },
+        {
+          "id": "b6_3",
+          "type": "probe",
+          "question": "Have you had trouble recognizing people you know, like family members or friends?",
+          "field": "difficulty_recognising_people",
+          "field_type": "boolean",
+          "comment": "Screens for prosopagnosia"
+        },
+        {
+          "id": "b6_4",
+          "type": "conditional",
+          "question": "If you hear their voice, can you then recognise them?",
+          "condition": "prosopagnosia",
+          "field": "can_recognise_people_by_voice",
+          "field_type": "boolean"
+        },
+        {
+          "id": "b6_5",
+          "type": "probe",
+          "question": "Are you having trouble finding your way around places you know well, like your home or neighborhood?",
+          "field": "trouble_navigating",
+          "field_type": "boolean"
+        },
+        {
+          "id": "b6_6",
+          "type": "probe",
+          "question": "When you look at a busy scene, can you see the whole picture, or do you only see one thing at a time?",
+          "field": "can_see_whole_picture",
+          "field_type": "boolean",
+          "comment": "Screens for simultanagnosia"
+        },
+        {
+          "id": "b6_7",
+          "type": "probe",
+          "question": "If you watch water being poured, does it look frozen or static?",
+          "field": "can_see_moving_water",
+          "field_type": "boolean",
+          "comment": "Screens for akinetopsia"
+        },
+        {
+          "id": "b6_8",
+          "type": "conditional",
+          "question": "And if you watch a car going down the street, can you see it moving or does it seem to be far away and then suddenly closer?",
+          "condition": "akinetopsia",
+          "field": "can_see_car_movement",
+          "field_type": "boolean"
+        }
+      ]
+    }
+  },
+
+  "constraints": {
+    "no_diagnosis": true,
+    "no_management_plan": true,
+    "conversation_style": "structured but conversational (not rigid list)",
+    "probing_rule": "If 'yes' to any symptom, always ask patient to describe further"
+  }
+}

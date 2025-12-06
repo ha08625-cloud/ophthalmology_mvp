@@ -1,0 +1,198 @@
+{
+  "schema_version": "1.0.0",
+  "chief_complaint": {
+    "presenting_complaint_description": {"required": true, "type": "text"},
+    "previous_instances": {"required": true, "type": "boolean"},
+    "comparison_to_last": {"required": "conditional", "type": "text"}
+  },
+  
+  "visual_loss": {
+    "visual_loss_present": {
+      "required": true, 
+      "type": "boolean", 
+      "description": "True if the patient describes absence of vision, blackouts, blind spots, reduction in acuity, blurriness or loss of visual field. Hallucinations, changes in colour perception and positive visual phenomena such as scintillating scotomata or wavy lines are not an indicator of visual loss"
+    },
+    "vl_description": {"required": "conditional", "type": "text", "comment": "Asked if vision loss already mentioned in chief complaint"},
+    "vl_laterality": {
+      "required": "conditional", 
+      "type": "categorical",
+      "values": ["monocular_left", "monocular_right", "binocular", "bilateral_monocular"]
+    },
+    "vl_onset_simultaneity": {
+      "required": "conditional",
+      "type": "categorical", 
+      "values": ["simultaneous", "sequential"],
+      "comment": "Asked if binocular - distinguishes true binocular from bilateral monocular"
+    },
+    "vl_field": {"required": "conditional", "type": "text", "comment": "Free text - may contain 'upper half', 'lower half', 'peripheral', etc."},
+    "vl_degree": {
+      "required": "conditional", 
+      "type": "categorical",
+      "values": ["partial", "total"]
+    },
+    "vl_acuity_description": {"required": "conditional", "type": "text", "comment": "Detailed description - 'couldn't read fine print', 'couldn't count fingers', etc."},
+    "vl_onset": {"required": "conditional", "type": "text", "comment": "Date or timeframe - e.g. '3 months ago', 'last Tuesday'"},
+    "vl_onset_speed": {
+      "required": "conditional",
+      "type": "categorical",
+      "values": ["acute", "subacute", "chronic"],
+      "definitions": {
+        "acute": "seconds to minutes",
+        "subacute": "hours to days",
+        "chronic": "weeks or longer"
+      }
+    },
+    "vl_temporal_pattern": {
+      "required": "conditional",
+      "type": "categorical",
+      "values": ["permanent", "transient", "intermittent"],
+      "definitions": {
+        "permanent": "came on and didn't improve",
+        "transient": "came on then resolved completely",
+        "intermittent": "comes and goes repeatedly"
+      }
+    },
+    "vl_episode_duration": {"required": "conditional", "type": "text", "comment": "If intermittent"},
+    "vl_episode_frequency": {"required": "conditional", "type": "text", "comment": "If intermittent"},
+    "vl_worsening": {"required": "conditional", "type": "boolean"},
+    "vl_worsening_after_2_weeks": {"required": "conditional", "type": "boolean"},
+    "vl_improved": {"required": "conditional", "type": "boolean"},
+    "vl_blackouts": {"required": "conditional", "type": "boolean", "comment": "Brief blackouts when looking around - partial monocular loss"},
+    "vl_other_eye_affected": {"required": "conditional", "type": "boolean", "comment": "Asked if complete monocular loss"},
+    "agnosia_present": {"required": "conditional", "type": "boolean"},
+    "agnosia_description": {"required": "conditional", "type": "text"}
+  },
+  
+  "visual_disturbances": {
+    "hallucinations_present": {"required": true, "type": "boolean"},
+    "hallucinations_description": {"required": "conditional", "type": "text"},
+    
+    "cp_present": {"required": true, "type": "boolean"},
+    "cp_onset": {"required": "conditional", "type": "text"},
+    "cp_laterality": {
+      "required": "conditional",
+      "type": "categorical",
+      "values": ["monocular", "binocular"]
+    },
+    "cp_field": {"required": "conditional", "type": "text", "comment": "May contain 'left side', 'right side' - triggers hemichromatopsia"},
+    "cp_colours_affected": {"required": "conditional", "type": "text"},
+    
+    "vp_present": {"required": true, "type": "boolean", "comment": "Positive visual phenomena"},
+    "vp_onset": {"required": "conditional", "type": "text"},
+    "vp_laterality": {
+      "required": "conditional",
+      "type": "categorical",
+      "values": ["monocular", "binocular"]
+    },
+    "vp_description": {"required": "conditional", "type": "text"},
+    "vp_duration": {"required": "conditional", "type": "text"},
+    "vp_location": {"required": "conditional", "type": "text"},
+    "vp_followed_by_headache": {"required": "conditional", "type": "boolean"},
+    
+    "dp_present": {"required": true, "type": "boolean"},
+    "dp_onset": {"required": "conditional", "type": "text"},
+    "dp_laterality": {
+      "required": "conditional",
+      "type": "categorical",
+      "values": ["monocular", "binocular"],
+      "comment": "Monocular diplopia = same eye problem; binocular = alignment problem"
+    },
+    "dp_gaze_dependence": {"required": "conditional", "type": "text"},
+    
+    "vertigo_present": {"required": true, "type": "boolean"},
+    "nystagmus_present": {"required": true, "type": "boolean"}
+  },
+  
+  "headache": {
+    "h_present": {"required": true, "type": "boolean"},
+    "h_description": {"required": "conditional", "type": "text"},
+    "h_onset": {"required": "conditional", "type": "text"},
+    "h_location": {"required": "conditional", "type": "text"},
+    "h_temporal_pattern": {
+      "required": "conditional",
+      "type": "categorical",
+      "values": ["permanent", "transient", "intermittent"],
+      "comment": "Matches vl_temporal_pattern terminology"
+    },
+    "h_worse_on_straining": {"required": "conditional", "type": "boolean"},
+    "h_time_of_day": {
+      "required": "conditional",
+      "type": "categorical",
+      "values": ["morning", "evening", "none"]
+    }
+  },
+  
+  "eye_pain_and_changes": {
+    "ep_present": {"required": true, "type": "boolean"},
+    "ep_onset": {"required": "conditional", "type": "text"},
+    "ep_severity": {"required": "conditional", "type": "integer", "range": [1, 10]},
+    "ep_worse_on_eye_movements": {"required": "conditional", "type": "boolean"},
+    
+    "dry_gritty_sensation": {"required": false, "type": "boolean"},
+    
+    "appearance_changes_present": {"required": true, "type": "boolean"},
+    "ac_redness": {"required": "conditional", "type": "boolean"},
+    "ac_discharge": {"required": "conditional", "type": "boolean"},
+    "ac_proptosis": {"required": "conditional", "type": "boolean"},
+    "ac_ptosis": {"required": "conditional", "type": "boolean"},
+    "ac_pupillary_changes": {"required": "conditional", "type": "boolean"},
+    "ac_rashes": {"required": "conditional", "type": "boolean"}
+  },
+  
+  "healthcare_contacts": {
+    "hc_contact_occurred": {"required": true, "type": "boolean"},
+    "hc_investigations_and_treatments": {"required": "conditional", "type": "text", "comment": "Response Parser will separate investigations from treatments"}
+  },
+  
+  "other_symptoms": {
+    "other_symptoms": {"required": false, "type": "text"}
+  },
+  
+  "functional_impact": {
+    "functional_impact": {"required": true, "type": "text"}
+  },
+  
+  "follow_up_blocks": {
+    "block_1": {
+      "name": "Optic Neuritis Screen",
+      "previous_visual_loss_episodes": {"required": "conditional", "type": "boolean"},
+      "uhthoff_phenomenon": {"required": "conditional", "type": "boolean"},
+      "pulfrich_phenomenon": {"required": "conditional", "type": "boolean"}
+    },
+    "block_2": {
+      "name": "Giant Cell Arteritis Screen",
+      "scalp_tenderness": {"required": "conditional", "type": "boolean"},
+      "jaw_claudication": {"required": "conditional", "type": "boolean"},
+      "shoulder_girdle_pain": {"required": "conditional", "type": "boolean"}
+    },
+    "block_3": {
+      "name": "Pituitary Dysfunction Screen",
+      "acromegalic_features": {"required": "conditional", "type": "boolean"},
+      "nipple_discharge": {"required": "conditional", "type": "boolean"},
+      "menstrual_changes": {"required": "conditional", "type": "boolean", "comment": "Ask if female"},
+      "erectile_dysfunction": {"required": "conditional", "type": "boolean", "comment": "Ask if male"},
+      "breast_growth": {"required": "conditional", "type": "boolean", "comment": "Ask if male"},
+      "temperature_intolerance": {"required": "conditional", "type": "boolean"}
+    },
+    "block_4": {
+      "name": "Nutritional/Toxic Optic Neuropathy Screen",
+      "nutritional_factors": {"required": "conditional", "type": "text"},
+      "toxic_medications": {"required": "conditional", "type": "text"}
+    },
+    "block_5": {
+      "name": "Cat Scratch Disease Screen",
+      "cat_exposure": {"required": "conditional", "type": "text"}
+    },
+    "block_6": {
+      "name": "Higher Visual Processing Screen",
+      "difficulty_reading": {"required": "conditional", "type": "boolean", "comment": "Screens for alexia"},
+      "can_read_by_spelling": {"required": "conditional", "type": "boolean"},
+      "difficulty_recognising_people": {"required": "conditional", "type": "boolean", "comment": "Screens for prosopagnosia"},
+      "can_recognise_people_by_voice": {"required": "conditional", "type": "boolean"},
+      "trouble_navigating": {"required": "conditional", "type": "boolean"},
+      "can_see_whole_picture": {"required": "conditional", "type": "boolean", "comment": "Screens for simultanagnosia"},
+      "can_see_moving_water": {"required": "conditional", "type": "boolean", "comment": "Screens for akinetopsia"},
+      "can_see_car_movement": {"required": "conditional", "type": "boolean"}
+    }
+  }
+}

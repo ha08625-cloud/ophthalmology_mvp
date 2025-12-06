@@ -1,0 +1,35 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# ML Models (don't commit these - huge files)
+*.bin
+*.pt
+*.pth
+*.safetensors
+*.gguf
+
+# Outputs (generated files - usually don't commit)
+outputs/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Conda
+*.conda
+
+# Logs
+*.log
+
+
+^X
+

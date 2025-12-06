@@ -1,0 +1,607 @@
+{
+  "schema_version": "2.0.2-multi-episode",
+  "description": "Multi-episode ophthalmology consultation schema with episode array and shared data",
+  
+  "metadata": {
+    "consultation_id": {"type": "string", "required": true},
+    "generated_at": {"type": "string", "format": "iso8601", "required": true},
+    "schema_version": {"type": "string", "required": true},
+    "total_episodes": {"type": "integer", "required": true}
+  },
+  
+  "episodes": {
+    "type": "array",
+    "description": "Array of symptom episodes, each representing a distinct clinical presentation",
+    "items": {
+      "type": "object",
+      "properties": {
+        "episode_id": {
+          "type": "integer",
+          "required": true,
+          "description": "Unique identifier for this episode (1, 2, 3, ...)"
+        },
+        
+        "vision_loss": {
+          "visual_loss_present": {
+            "type": "boolean",
+            "required": true,
+            "description": "Is vision loss present in this episode?"
+          },
+          "vl_single_eye": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["single", "both"]
+          },
+          "vl_laterality": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["left", "right"],
+            "description": "Which eye is affected (only asked if vl_single_eye is 'single')"
+          },
+          "vl_onset_simultaneity": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["simultaneous", "sequential"],
+            "description": "If binocular, were both eyes affected simultaneously?"
+          },
+          "vl_field": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Which part of visual field is affected"
+          },
+          "vl_degree": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["partial", "total"]
+          },
+          "vl_acuity_description": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Detailed acuity description"
+          },
+          "vl_first_onset": {
+            "type": "text",
+            "required": "conditional",
+            "description": "When vision loss first appeared (for recurrent patterns)"
+          },
+          "vl_onset_speed": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["acute", "subacute", "chronic"],
+            "definitions": {
+              "acute": "seconds to minutes",
+              "subacute": "hours to days", 
+              "chronic": "weeks or longer"
+            }
+          },
+          "vl_temporal_pattern": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["permanent", "transient", "intermittent"],
+            "description": "Overall temporal pattern of vision loss"
+          },
+          "vl_flareup_usual_duration": {
+            "type": "text",
+            "required": "conditional",
+            "description": "How long each flare-up typically lasts (for intermittent patterns)"
+          },
+          "vl_flareup_frequency": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Time between flare-ups (for intermittent patterns)"
+          },
+          "vl_interval_visual_loss": {
+            "type": "Boolean",
+            "required": "conditional",
+            "description": "Whether there is still visual loss between flare-ups"
+          },
+          "vl_interval_acuity": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Acuity during the intervals"
+          },
+          "vl_worsening": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Did vision loss continue worsening after onset?"
+          },
+          "vl_worsening_after_2_weeks": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "vl_improved": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "vl_completely_resolved": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Has the vision loss completely resolved? Asked if visual_loss_present is true."
+          },
+          "vl_blackouts": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Brief blackouts when looking around (partial monocular loss)"
+          },
+          "agnosia_present": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "agnosia_description": {
+            "type": "text",
+            "required": "conditional"
+          }
+        },
+        
+        "visual_disturbances": {
+          "cp_present": {
+            "type": "boolean",
+            "required": true,
+            "description": "Color perception problems"
+          },
+          "cp_first_onset": {
+            "type": "text",
+            "required": "conditional",
+            "description": "When color perception problems first appeared"
+          },
+          "cp_temporal_pattern": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["permanent", "transient", "intermittent"],
+            "description": "Temporal pattern of color perception problems"
+          },
+          "cp_laterality": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["monocular", "binocular"]
+          },
+          "cp_field": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "cp_colours_affected": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "cp_completely_resolved": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Have the color perception problems completely resolved? Asked if cp_present is true."
+          },
+          "vp_present": {
+            "type": "boolean",
+            "required": true,
+            "description": "Visual phenomena (flashing lights, zigzags)"
+          },
+          "vp_description": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "vp_first_onset": {
+            "type": "text",
+            "required": "conditional",
+            "description": "When visual phenomena first appeared"
+          },
+          "vp_temporal_pattern": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["permanent", "transient", "intermittent"],
+            "description": "Temporal pattern of visual phenomena"
+          },
+          "vp_laterality": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["monocular", "binocular"]
+          },
+          "vp_duration": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "vp_location": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "vp_followed_by_headache": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "vp_completely_resolved": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Have the visual phenomena completely resolved? Asked if vp_present is true."
+          },
+          "dp_present": {
+            "type": "boolean",
+            "required": true,
+            "description": "Diplopia (double vision)"
+          },
+          "dp_first_onset": {
+            "type": "text",
+            "required": "conditional",
+            "description": "When diplopia first appeared"
+          },
+          "dp_temporal_pattern": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["permanent", "transient", "intermittent"],
+            "description": "Temporal pattern of diplopia"
+          },
+          "dp_laterality": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["monocular", "binocular"]
+          },
+          "dp_gaze_dependence": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "dp_completely_resolved": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Has the diplopia completely resolved? Asked if dp_present is true."
+          },
+          "vertigo_present": {
+            "type": "boolean",
+            "required": true
+          },
+          "nystagmus_present": {
+            "type": "boolean",
+            "required": true
+          },
+          "hallucinations_present": {
+            "type": "boolean",
+            "required": true
+          },
+          "hallucinations_description": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "hallucinations_completely_resolved": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Have the hallucinations completely resolved? Asked if hallucinations_present is true."
+          }
+        },
+        
+        "headache": {
+          "h_present": {
+            "type": "boolean",
+            "required": true
+          },
+          "h_description": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "h_first_onset": {
+            "type": "text",
+            "required": "conditional",
+            "description": "When headache first appeared"
+          },
+          "h_temporal_pattern": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["permanent", "transient", "intermittent"],
+            "description": "Overall temporal pattern of headache"
+          },
+          "h_flareup_usual_duration": {
+            "type": "text",
+            "required": "conditional",
+            "description": "How long each headache typically lasts (for intermittent patterns)"
+          },
+          "h_flareup_frequency": {
+            "type": "text",
+            "required": "conditional",
+            "description": "How often each flare-up lasts (for intermittent patterns)"
+          },
+          "h_interval_severity": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Headache severity between flare-ups (if not complete resolution)"
+          },
+          "h_worst_severity": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Worst headache severity experienced"
+          },
+          "h_location": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "h_worse_on_straining": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "h_time_of_day": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["morning", "evening", "none"]
+          },
+          "h_completely_resolved": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Has the headache completely resolved? Asked if h_present is true."
+          }
+        },
+        
+        "eye_pain": {
+          "ep_present": {
+            "type": "boolean",
+            "required": true
+          },
+          "ep_description": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Description of the eye pain"
+          },
+          "ep_first_onset": {
+            "type": "text",
+            "required": "conditional",
+            "description": "When eye pain first appeared"
+          },
+          "ep_temporal_pattern": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["permanent", "transient", "intermittent"],
+            "description": "Temporal pattern of eye pain"
+          },
+          "ep_single_eye": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Is the eye pain affecting one or both eyes?"
+          },
+          "ep_laterality": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Which side is it affecting? - Asked only if single eye pain"
+          },
+          "ep_onset_simultaneity": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Did it start in both eyes at the same time or one after the other"
+          },
+          "ep_severity": {
+            "type": "integer",
+            "required": "conditional",
+            "valid_range": [1, 10]
+          },
+          "ep_worse_on_eye_movements": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ep_completely_resolved": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Has the eye pain completely resolved? Asked if ep_present is true."
+          },
+          "dry_gritty_sensation": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+
+        "appearance_changes": {
+          "ac_present": {
+            "type": "boolean",
+            "required": true
+          },
+          "ac_redness": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ac_discharge": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ac_proptosis": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ac_ptosis": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ac_pupillary_changes": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ac_rashes": {
+            "type": "boolean",
+            "required": "conditional"
+          }
+        },
+        
+        "healthcare_contacts": {
+          "hc_contact_occurred": {
+            "type": "boolean",
+            "required": true,
+            "description": "Healthcare contact for this specific episode"
+          },
+          "hc_investigations_and_treatments": {
+            "type": "text",
+            "required": "conditional"
+          }
+        },
+        
+        "other_symptoms": {
+          "other_symptoms": {
+            "type": "text",
+            "required": false,
+            "description": "Other symptoms associated with this episode"
+          }
+        },
+        
+        "functional_impact": {
+          "functional_impact": {
+            "type": "text",
+            "required": true,
+            "description": "How this episode affects daily life"
+          }
+        },
+        
+        "follow_up_blocks": {
+          "description": "Triggered follow-up question blocks for this episode",
+          "block_1": {
+            "name": "block_1",
+            "previous_visual_loss_episodes": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "uhthoff_phenomenon": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "pulfrich_phenomenon": {
+              "type": "boolean",
+              "required": "conditional"
+            }
+          },
+          "block_2": {
+            "name": "block_2",
+            "scalp_tenderness": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "jaw_claudication": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "shoulder_girdle_pain": {
+              "type": "boolean",
+              "required": "conditional"
+            }
+          },
+          "block_3": {
+            "name": "block_3",
+            "acromegalic_features": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "nipple_discharge": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "menstrual_changes": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "erectile_dysfunction": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "breast_growth": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "temperature_intolerance": {
+              "type": "boolean",
+              "required": "conditional"
+            }
+          },
+          "block_4": {
+            "name": "block_4",
+            "nutritional_factors": {
+              "type": "text",
+              "required": "conditional"
+            },
+            "toxic_medications": {
+              "type": "text",
+              "required": "conditional"
+            }
+          },
+          "block_5": {
+            "name": "block_5",
+            "cat_exposure": {
+              "type": "text",
+              "required": "conditional"
+            }
+          },
+          "block_6": {
+            "name": "block_6",
+            "difficulty_reading": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "can_read_by_spelling": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "difficulty_recognising_people": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "can_recognise_people_by_voice": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "trouble_navigating": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "can_see_whole_picture": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "can_see_moving_water": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "can_see_car_movement": {
+              "type": "boolean",
+              "required": "conditional"
+            }
+          }
+        }
+      }
+    }
+  },
+  
+  "shared_data": {
+    "description": "Data shared across all episodes (not episode-specific)",
+    
+    "past_medical_history": {
+      "type": "array",
+      "description": "Past medical conditions",
+      "items": {
+        "condition": {"type": "text"},
+        "diagnosed_when": {"type": "text"},
+        "current_status": {"type": "text"}
+      }
+    },
+    
+    "medications": {
+      "type": "array",
+      "description": "Current medications",
+      "items": {
+        "medication_name": {"type": "text"},
+        "dose": {"type": "text"},
+        "frequency": {"type": "text"},
+        "indication": {"type": "text"}
+      }
+    },
+    
+    "family_history": {
+      "type": "array",
+      "description": "Family history of relevant conditions",
+      "items": {
+        "condition": {"type": "text"},
+        "relationship": {"type": "text"}
+      }
+    },
+    
+    "social_history": {
+      "smoking_status": {"type": "categorical", "valid_values": ["never", "current", "former"]},
+      "alcohol_use": {"type": "text"},
+      "occupation": {"type": "text"},
+      "living_situation": {"type": "text"}
+    }
+  },
+  
+  "notes": {
+    "episode_definition": "An episode represents a distinct symptom presentation. New episode if: (1) symptom type changes, (2) location changes, (3) complete resolution >1 month then recurrence.",
+    "schema_changes_v2": "Removed chief_complaint (redundant with symptom sections), symptom_type (derivable from present symptoms), currently_active and episode-level completely_resolved (replaced with per-symptom resolved fields). Each symptom section now has its own _completely_resolved field.",
+    "temporal_fields": "Each symptom section has its own temporal fields (first_onset, temporal_pattern, flareup_duration, etc). This allows different symptoms within the same episode to have different temporal patterns.",
+    "resolved_fields": "Each symptom that has a _present field also has a _completely_resolved field. This allows tracking resolution status per symptom rather than per episode.",
+    "follow_up_blocks": "Triggered based on episode-specific data. Each episode can trigger different blocks.",
+    "field_prefixes": "vl_ = vision loss, h_ = headache, ep_ = eye pain, ac_ = appearance changes, cp_ = color perception, vp_ = visual phenomena, dp_ = diplopia, hc_ = healthcare contacts"
+  }
+}
