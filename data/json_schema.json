@@ -442,110 +442,106 @@
           "description": "Triggered follow-up question blocks for this episode",
           "block_1": {
             "name": "block_1",
-            "previous_visual_loss_episodes": {
+            "b1_uhthoff_phenomenon": {
               "type": "boolean",
               "required": "conditional"
             },
-            "uhthoff_phenomenon": {
-              "type": "boolean",
-              "required": "conditional"
-            },
-            "pulfrich_phenomenon": {
+            "b1_pulfrich_phenomenon": {
               "type": "boolean",
               "required": "conditional"
             }
           },
           "block_2": {
             "name": "block_2",
-            "scalp_tenderness": {
+            "b2_scalp_tenderness": {
               "type": "boolean",
               "required": "conditional"
             },
-            "jaw_claudication": {
+            "b2_jaw_claudication": {
               "type": "boolean",
               "required": "conditional"
             },
-            "shoulder_girdle_pain": {
+            "b2_shoulder_girdle_pain": {
               "type": "boolean",
               "required": "conditional"
             }
           },
           "block_3": {
             "name": "block_3",
-            "acromegalic_features": {
+            "b3_acromegalic_features": {
               "type": "boolean",
               "required": "conditional"
             },
-            "nipple_discharge": {
+            "b3_nipple_discharge": {
               "type": "boolean",
               "required": "conditional"
             },
-            "menstrual_changes": {
+            "b3_menstrual_changes": {
               "type": "boolean",
               "required": "conditional"
             },
-            "erectile_dysfunction": {
+            "b3_erectile_dysfunction": {
               "type": "boolean",
               "required": "conditional"
             },
-            "breast_growth": {
+            "b3_breast_growth": {
               "type": "boolean",
               "required": "conditional"
             },
-            "temperature_intolerance": {
+            "b3_temperature_intolerance": {
               "type": "boolean",
               "required": "conditional"
             }
           },
           "block_4": {
             "name": "block_4",
-            "nutritional_factors": {
+            "b4_nutritional_factors": {
               "type": "text",
               "required": "conditional"
             },
-            "toxic_medications": {
+            "b4_toxic_medications": {
               "type": "text",
               "required": "conditional"
             }
           },
           "block_5": {
             "name": "block_5",
-            "cat_exposure": {
+            "b5_cat_exposure": {
               "type": "text",
               "required": "conditional"
             }
           },
           "block_6": {
             "name": "block_6",
-            "difficulty_reading": {
+            "b6_difficulty_reading": {
               "type": "boolean",
               "required": "conditional"
             },
-            "can_read_by_spelling": {
+            "b6_can_read_by_spelling": {
               "type": "boolean",
               "required": "conditional"
             },
-            "difficulty_recognising_people": {
+            "b6_difficulty_recognising_people": {
               "type": "boolean",
               "required": "conditional"
             },
-            "can_recognise_people_by_voice": {
+            "b6_can_recognise_people_by_voice": {
               "type": "boolean",
               "required": "conditional"
             },
-            "trouble_navigating": {
+            "b6_trouble_navigating": {
               "type": "boolean",
               "required": "conditional"
             },
-            "can_see_whole_picture": {
+            "b6_can_see_whole_picture": {
               "type": "boolean",
               "required": "conditional"
             },
-            "can_see_moving_water": {
+            "b6_can_see_moving_water": {
               "type": "boolean",
               "required": "conditional"
             },
-            "can_see_car_movement": {
+            "b6_can_see_car_movement": {
               "type": "boolean",
               "required": "conditional"
             }

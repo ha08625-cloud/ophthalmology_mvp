@@ -918,22 +918,15 @@
         {
           "id": "b1_1",
           "type": "probe",
-          "question": "Have you had previous episodes of visual loss?",
-          "field": "previous_visual_loss_episodes",
+          "question": "Do your symptoms worsen with exercise or heat exposure?",
+          "field": "b1_uhthoff_phenomenon",
           "field_type": "boolean"
         },
         {
           "id": "b1_2",
           "type": "probe",
-          "question": "Do your symptoms worsen with exercise or heat exposure (Uhthoff phenomenon)?",
-          "field": "uhthoff_phenomenon",
-          "field_type": "boolean"
-        },
-        {
-          "id": "b1_3",
-          "type": "probe",
-          "question": "Do moving objects appear closer or further than they are (Pulfrich phenomenon)?",
-          "field": "pulfrich_phenomenon",
+          "question": "Do moving objects appear closer or further than they are?",
+          "field": "b1_pulfrich_phenomenon",
           "field_type": "boolean"
         }
       ]
@@ -945,21 +938,21 @@
           "id": "b2_1",
           "type": "probe",
           "question": "Do you have scalp tenderness?",
-          "field": "scalp_tenderness",
+          "field": "b2_scalp_tenderness",
           "field_type": "boolean"
         },
         {
           "id": "b2_2",
           "type": "probe",
           "question": "Do you have jaw pain when chewing (jaw claudication)?",
-          "field": "jaw_claudication",
+          "field": "b2_jaw_claudication",
           "field_type": "boolean"
         },
         {
           "id": "b2_3",
           "type": "probe",
           "question": "Do you have pain in your shoulders or around your shoulder girdle?",
-          "field": "shoulder_girdle_pain",
+          "field": "b2_shoulder_girdle_pain",
           "field_type": "boolean"
         }
       ]
@@ -971,21 +964,21 @@
           "id": "b3_1",
           "type": "probe",
           "question": "Have you noticed any change in your appearance, like your face, hands, or feet growing larger?",
-          "field": "acromegalic_features",
+          "field": "b3_acromegalic_features",
           "field_type": "boolean"
         },
         {
           "id": "b3_2",
           "type": "probe",
-          "question": "Do you have any nipple discharge?",
-          "field": "nipple_discharge",
+          "question": "Have you noticed any discharge from the nipples?",
+          "field": "b3_nipple_discharge",
           "field_type": "boolean"
         },
         {
           "id": "b3_3",
           "type": "probe",
           "question": "Have you noticed any change in your menstrual periods?",
-          "field": "menstrual_changes",
+          "field": "b3_menstrual_changes",
           "field_type": "boolean",
           "comment": "Ask if female"
         },
@@ -993,7 +986,7 @@
           "id": "b3_4",
           "type": "probe",
           "question": "Have you experienced erectile dysfunction?",
-          "field": "erectile_dysfunction",
+          "field": "b3_erectile_dysfunction",
           "field_type": "boolean",
           "comment": "Ask if male"
         },
@@ -1001,15 +994,15 @@
           "id": "b3_5",
           "type": "probe",
           "question": "Have you noticed any breast growth or enlargement?",
-          "field": "breast_growth",
+          "field": "b3_breast_growth",
           "field_type": "boolean",
           "comment": "Ask if male"
         },
         {
           "id": "b3_6",
           "type": "probe",
-          "question": "Do you feel hot or cold all the time?",
-          "field": "temperature_intolerance",
+          "question": "Do you find that you feel much hotter or colder than expected given the weather?",
+          "field": "b3_temperature_intolerance",
           "field_type": "boolean"
         }
       ]
@@ -1021,14 +1014,14 @@
           "id": "b4_1",
           "type": "probe",
           "question": "Do you have any dietary restrictions, digestive issues, or have you had stomach or gut surgery?",
-          "field": "nutritional_factors",
+          "field": "b4_nutritional_factors",
           "field_type": "text"
         },
         {
           "id": "b4_2",
           "type": "probe",
           "question": "Are you taking any of these medications: ethambutol, amiodarone, methotrexate, trimethoprim, or regular antacids like omeprazole?",
-          "field": "toxic_medications",
+          "field": "b4_toxic_medications",
           "field_type": "text"
         }
       ]
@@ -1040,7 +1033,7 @@
           "id": "b5_1",
           "type": "probe",
           "question": "Have you had any exposure to cats? Specifically, have you been scratched by a cat?",
-          "field": "cat_exposure",
+          "field": "b5_cat_exposure",
           "field_type": "text"
         }
       ]
@@ -1052,7 +1045,7 @@
           "id": "b6_1",
           "type": "probe",
           "question": "Are you having difficulty reading words?",
-          "field": "difficulty_reading",
+          "field": "b6_difficulty_reading",
           "field_type": "boolean",
           "comment": "Screens for alexia"
         },
@@ -1061,14 +1054,14 @@
           "type": "conditional",
           "question": "If you spell out a word letter by letter, can you then recognise it?",
           "condition": "alexia",
-          "field": "can_read_by_spelling",
+          "field": "b6_can_read_by_spelling",
           "field_type": "boolean"
         },
         {
           "id": "b6_3",
           "type": "probe",
           "question": "Have you had trouble recognizing people you know, like family members or friends?",
-          "field": "difficulty_recognising_people",
+          "field": "b6_difficulty_recognising_people",
           "field_type": "boolean",
           "comment": "Screens for prosopagnosia"
         },
@@ -1077,21 +1070,21 @@
           "type": "conditional",
           "question": "If you hear their voice, can you then recognise them?",
           "condition": "prosopagnosia",
-          "field": "can_recognise_people_by_voice",
+          "field": "b6_can_recognise_people_by_voice",
           "field_type": "boolean"
         },
         {
           "id": "b6_5",
           "type": "probe",
           "question": "Are you having trouble finding your way around places you know well, like your home or neighborhood?",
-          "field": "trouble_navigating",
+          "field": "b6_trouble_navigating",
           "field_type": "boolean"
         },
         {
           "id": "b6_6",
           "type": "probe",
           "question": "When you look at a busy scene, can you see the whole picture, or do you only see one thing at a time?",
-          "field": "can_see_whole_picture",
+          "field": "b6_can_see_whole_picture",
           "field_type": "boolean",
           "comment": "Screens for simultanagnosia"
         },
@@ -1099,7 +1092,7 @@
           "id": "b6_7",
           "type": "probe",
           "question": "If you watch water being poured, does it look frozen or static?",
-          "field": "can_see_moving_water",
+          "field": "b6_can_see_moving_water",
           "field_type": "boolean",
           "comment": "Screens for akinetopsia"
         },
@@ -1108,7 +1101,7 @@
           "type": "conditional",
           "question": "And if you watch a car going down the street, can you see it moving or does it seem to be far away and then suddenly closer?",
           "condition": "akinetopsia",
-          "field": "can_see_car_movement",
+          "field": "b6_can_see_car_movement",
           "field_type": "boolean"
         }
       ]
