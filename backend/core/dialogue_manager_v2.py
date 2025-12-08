@@ -272,30 +272,114 @@ class DialogueManagerV2:
         logger.info(f"Created Episode {episode_id}")
         return episode_id
     
-    def _ask_episode_questions(self, input_fn, output_fn, question_offset):
-        """
-        Ask all questions for current episode
-        
-        Args:
-            input_fn: Get user input
-            output_fn: Display output
-            question_offset: Starting question number (for display)
+        def _ask_episode_questions(self, input_fn, output_fn, question_offset):
+                """
+                Ask all questions for current episode
+                
+                Args:
+                    input_fn: Get user input
+                    output_fn: Display output
+                    question_offset: Starting question number (for display)
+                    
+                Returns:
+                    tuple: (episode_complete, questions_asked)
+                        - episode_complete: True if naturally finished, False if early exit
+                        - questions_asked: Number of questions asked
+                """
+                questions_asked = 0
+                
+                while True:
+                    # Get episode data formatted for selector
+                    episode_data = self.state.get_episode_for_selector(self.current_episode_id)
+                    
+                    # Get next question for current episode
+                    question_dict = self.selector.get_next_question(episode_data)
+                    
+                    # Check if episode complete (no more questions)
+                    if question_dict is None:
+                        logger.info(f"Episode {self.current_episode_id} complete - no more questions")
+                        return True, questions_asked
+                    
+                    # Display question
+                    question_text = question_dict.get('question', '[No question text]')
+                    question_id = question_dict.get('id', 'unknown')
+                    field = question_dict.get('field', 'unknown')
+                    
+                    question_number = question_offset + questions_asked + 1
+                    output_fn(f"\nQ{question_number}: {question_text}")
+                    logger.info(f"Episode {self.current_episode_id} - Asked: id={question_id}, field={field}")
+                    
+                    # Get patient response
+                    try:
+                        response = input_fn("> ").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        output_fn("\n\nConsultation interrupted by user")
+                        return False, questions_asked
+                    
+                    # Check for exit command
+                    if self._is_exit_command(response):
+                        return False, questions_asked
+                    
+                    # Parse response
+                    try:
+                        extracted = self.parser.parse(
+                            question=question_dict,
+                            patient_response=response
+                        )
+                        logger.info(f"Parsed response: id={question_id}, extracted={len(extracted)} fields")
+                        
+                    except Exception as e:
+                        logger.error(f"Parse error for {question_id}: {e}")
+                        self._handle_error(e, context=f"parse_{question_id}")
+                        extracted = {}
+                    
+                    # Route extracted fields to appropriate storage
+                    unmapped = self._route_extracted_fields(
+                        episode_id=self.current_episode_id,
+                        extracted=extracted
+                    )
+                    
+                    # Mark question as answered (NEW - required for Question Selector V2)
+                    self.state.mark_question_answered(self.current_episode_id, question_id)
+                    
+                    # Check for new trigger activations (NEW - required for Question Selector V2)
+                    episode_data = self.state.get_episode_for_selector(self.current_episode_id)
+                    newly_triggered = self.selector.check_triggers(episode_data)
+                    
+                    for block_id in newly_triggered:
+                        if block_id not in episode_data['follow_up_blocks_activated']:
+                            self.state.activate_follow_up_block(self.current_episode_id, block_id)
+                            logger.info(f"Triggered follow-up block: {block_id}")
+                    
+                    # Check for block completions (NEW - required for Question Selector V2)
+                    for block_id in episode_data['follow_up_blocks_activated']:
+                        if block_id not in episode_data['follow_up_blocks_completed']:
+                            if self.selector.is_block_complete(block_id, episode_data):
+                                self.state.complete_follow_up_block(self.current_episode_id, block_id)
+                                logger.info(f"Completed follow-up block: {block_id}")
+                    
+                    # Add dialogue turn with unmapped fields in metadata
+                    try:
+                        self.state.add_dialogue_turn(
+                            episode_id=self.current_episode_id,
+                            question_id=question_id,
+                            question_text=question_text,
+                            patient_response=response,
+                            extracted_fields={
+                                **extracted,
+                                '_unmapped': unmapped
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"Dialogue turn recording error: {e}")
+                        self._handle_error(e, context=f"dialogue_turn_{question_id}")
+                    
+                    questions_asked += 1
             
-        Returns:
-            tuple: (episode_complete, questions_asked)
-                - episode_complete: True if naturally finished, False if early exit
-                - questions_asked: Number of questions asked
-        """
-        questions_asked = 0
-        
-        while True:
-            # Get next question for current episode
-            question_dict = self.selector.get_next_question()
-            
-            # Check if episode complete (no more questions)
-            if question_dict is None:
-                logger.info(f"Episode {self.current_episode_id} complete - no more questions")
-                return True, questions_asked
+        # Check if episode complete (no more questions)
+        if question_dict is None:
+            logger.info(f"Episode {self.current_episode_id} complete - no more questions")
+            return True, questions_asked
             
             # Display question
             question_text = question_dict.get('question', '[No question text]')

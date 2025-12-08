@@ -1,665 +1,516 @@
 """
-Question Selector V2 - Multi-episode deterministic question selection
+Question Selector V2 - Stateless question selection for multi-episode consultations
 
 Responsibilities:
-- Parse ruleset_v2_0_2.json (same as V1)
-- Select next required question for current episode
-- Apply conditional logic (episode-scoped)
-- Detect and activate trigger blocks (per-episode)
-- Track consultation progress per episode
+- Select next question based on episode state and medical protocol
+- Evaluate DSL conditions from ruleset
+- Detect trigger conditions for follow-up blocks
+- Determine block completion status
 
 Design principles:
-- Fully deterministic - no LLM involvement
-- Episode-aware - all operations scoped to current episode
-- Medical protocol compliance guaranteed
-- Automatic state reset on episode transition
-- Thin surface - minimal API
+- Stateless: All state comes from episode_data parameter
+- Deterministic: Same input always produces same output
+- Pure functions: No side effects
+- Fail fast: Validate ruleset on initialization
 
-Key differences from V1:
-- get_next_question() requires episode_id parameter
-- Per-episode tracking of answered questions
-- Per-episode trigger activation
-- Episode-scoped field checks and condition evaluation
+Provenance hooks:
+- _evaluate_condition() and _evaluate_dsl() can be wrapped later
+- check_triggers() returns block IDs (can be extended with trigger names)
+- is_block_complete() can be extended to return skip reasons
 """
 
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Dict, List, Set, Any
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class QuestionSelectorV2:
-    """Selects next question based on episode state and medical protocol"""
+    """
+    Stateless question selector for multi-episode consultations.
     
-    def __init__(self, ruleset_path: str, state_manager):
+    Determines the next question based on episode state and medical protocol.
+    Does not track any state internally - all state comes from episode_data.
+    """
+    
+    def __init__(self, ruleset_path: str):
         """
-        Initialize Question Selector V2
+        Initialize selector with ruleset.
         
         Args:
-            ruleset_path (str): Path to ruleset_v2_0_2.json
-            state_manager: StateManagerV2 instance
+            ruleset_path: Path to ruleset.json
             
         Raises:
-            FileNotFoundError: If ruleset file doesn't exist
-            json.JSONDecodeError: If ruleset is malformed
+            FileNotFoundError: If ruleset doesn't exist
+            ValueError: If ruleset missing required keys or has invalid references
         """
-        self.logger = logging.getLogger(__name__)
-        self.state = state_manager
-        self.ruleset = self._load_ruleset(ruleset_path)
+        self.ruleset_path = Path(ruleset_path)
         
-        # Section order (fixed sequence for MVP)
-        self.section_order = [
-            "vision_loss",
-            "visual_disturbances",
-            "headache",
-            "eye_pain",
-            "appearance_changes",
-            "healthcare_contacts",
-            "other_symptoms",
-            "functional_impact"
-        ]
+        if not self.ruleset_path.exists():
+            raise FileNotFoundError(f"Ruleset not found: {ruleset_path}")
         
-        # Per-episode tracking
-        self.answered_per_episode: Dict[int, Set[str]] = {}
-        self.section_index_per_episode: Dict[int, int] = {}
-        self.core_complete_per_episode: Dict[int, bool] = {}
-        self.triggered_blocks_per_episode: Dict[int, List[str]] = {}
-        self.blocks_asked_per_episode: Dict[int, Set[str]] = {}
+        # Load ruleset
+        with open(self.ruleset_path, 'r') as f:
+            self.ruleset = json.load(f)
         
-        # Track last episode to detect transitions
-        self.last_episode_id: Optional[int] = None
+        # Extract top-level components
+        self.section_order = self.ruleset.get("section_order")
+        self.conditions = self.ruleset.get("conditions", {})
+        self.trigger_conditions = self.ruleset.get("trigger_conditions", {})
+        self.sections = self.ruleset.get("sections", {})
+        self.follow_up_blocks = self.ruleset.get("follow_up_blocks", {})
         
-        self.logger.info("Question Selector V2 initialized (multi-episode)")
+        # Validate ruleset structure
+        self._validate_ruleset()
+        
+        logger.info(f"Question Selector V2 initialized with {len(self.section_order)} sections")
     
-    def _load_ruleset(self, path: str) -> dict:
+    # =========================================================================
+    # Public API
+    # =========================================================================
+    
+    def get_next_question(self, episode_data: dict) -> Optional[dict]:
         """
-        Load and validate ruleset JSON
+        Get next question for episode.
         
         Args:
-            path (str): Path to ruleset file
-            
+            episode_data: Complete episode state containing:
+                - questions_answered: set[str]
+                - follow_up_blocks_activated: set[str]
+                - follow_up_blocks_completed: set[str]
+                - [extracted fields]: e.g., vl_laterality, h_present, etc.
+        
         Returns:
-            dict: Parsed ruleset
+            Question dict with keys: id, question, field, field_type, etc.
+            None if no more questions for this episode.
             
         Raises:
-            FileNotFoundError: If file doesn't exist
-            json.JSONDecodeError: If JSON is malformed
-            ValueError: If required sections missing
+            KeyError: If episode_data missing required keys
         """
-        ruleset_file = Path(path)
+        # Extract required state
+        questions_answered = episode_data.get("questions_answered", set())
+        blocks_activated = episode_data.get("follow_up_blocks_activated", set())
+        blocks_completed = episode_data.get("follow_up_blocks_completed", set())
         
-        if not ruleset_file.exists():
-            raise FileNotFoundError(f"Ruleset not found: {path}")
+        # Step 1: Check for pending follow-up block questions
+        pending_blocks = blocks_activated - blocks_completed
         
-        with open(ruleset_file, 'r') as f:
-            ruleset = json.load(f)
+        for block_id in sorted(pending_blocks):  # Deterministic order
+            next_q = self._get_next_block_question(block_id, questions_answered, episode_data)
+            if next_q is not None:
+                return next_q
         
-        # Validate required sections exist
-        required_sections = ["sections", "conditions", "trigger_conditions", "follow_up_blocks"]
-        for section in required_sections:
-            if section not in ruleset:
-                raise ValueError(f"Ruleset missing required section: {section}")
-        
-        self.logger.info(f"Loaded ruleset from {path}")
-        return ruleset
-    
-    def get_next_question(self, current_episode_id: int) -> Optional[dict]:
-        """
-        Get next question to ask for current episode
-        
-        Automatically resets state when episode_id changes.
-        
-        Args:
-            current_episode_id (int): Which episode we're asking about (1-indexed)
+        # Step 2: Walk sections in order
+        for section_name in self.section_order:
+            section_questions = self.sections.get(section_name, [])
             
-        Returns:
-            dict: Question object with id, question, field, etc.
-                  None if episode complete
-                  
-        Raises:
-            ValueError: If episode_id doesn't exist in State Manager
-        """
-        # Validate episode exists
-        if current_episode_id not in self.state.list_episode_ids():
-            raise ValueError(f"Episode {current_episode_id} does not exist in State Manager")
-        
-        # Detect episode transition - only initialize if new episode
-        if current_episode_id != self.last_episode_id:
-            if current_episode_id not in self.answered_per_episode:
-                # New episode - initialize tracking state
-                self._initialize_episode_state(current_episode_id)
-            self.last_episode_id = current_episode_id
-        
-        # Get answered questions for this episode
-        answered = self.answered_per_episode[current_episode_id]
-        
-        # Process core sections sequentially
-        if not self.core_complete_per_episode[current_episode_id]:
-            section_index = self.section_index_per_episode[current_episode_id]
-            
-            while section_index < len(self.section_order):
-                section_name = self.section_order[section_index]
-                question = self._get_next_from_section(
-                    section_name, 
-                    current_episode_id, 
-                    answered
-                )
+            for question in section_questions:
+                q_id = question.get("id")
                 
-                if question:
-                    self.logger.debug(
-                        f"Episode {current_episode_id}: Returning question {question['id']} "
-                        f"from section {section_name}"
-                    )
-                    return question
-                else:
-                    # Section complete, move to next
-                    self.logger.info(
-                        f"Episode {current_episode_id}: Section {section_name} complete"
-                    )
-                    section_index += 1
-                    self.section_index_per_episode[current_episode_id] = section_index
-            
-            # All core sections complete
-            self.core_complete_per_episode[current_episode_id] = True
-            self.logger.info(
-                f"Episode {current_episode_id}: All core sections complete, checking triggers"
-            )
-            self._check_triggers(current_episode_id)
-        
-        # Process triggered follow-up blocks
-        triggered_blocks = self.triggered_blocks_per_episode[current_episode_id]
-        blocks_asked = self.blocks_asked_per_episode[current_episode_id]
-        
-        for block_name in triggered_blocks:
-            if block_name not in blocks_asked:
-                question = self._get_next_from_block(
-                    block_name, 
-                    current_episode_id, 
-                    answered
-                )
+                # Skip if already answered
+                if q_id in questions_answered:
+                    continue
                 
-                if question:
-                    self.logger.debug(
-                        f"Episode {current_episode_id}: Returning question {question['id']} "
-                        f"from block {block_name}"
-                    )
-                    return question
-                else:
-                    # Block complete
-                    blocks_asked.add(block_name)
-                    self.logger.info(
-                        f"Episode {current_episode_id}: Block {block_name} complete"
-                    )
+                # Check if eligible (probe or condition met)
+                if not self._is_eligible(question, episode_data):
+                    continue
+                
+                # Found next question
+                return question
         
-        # Everything complete for this episode
-        self.logger.info(f"Episode {current_episode_id}: All questions complete")
+        # Step 3: All done
         return None
     
-    def mark_question_answered(self, episode_id: int, question_id: str) -> None:
+    def check_triggers(self, episode_data: dict) -> set:
         """
-        Mark a question as answered for an episode
-        
-        This should be called by Dialogue Manager after processing response.
+        Check which follow-up blocks should be activated based on current state.
         
         Args:
-            episode_id (int): Episode this question belongs to
-            question_id (str): Question identifier (e.g., 'vl_2')
-            
-        Raises:
-            ValueError: If episode not initialized
-        """
-        if episode_id not in self.answered_per_episode:
-            raise ValueError(
-                f"Episode {episode_id} not initialized. "
-                f"Call get_next_question() first."
-            )
-        
-        self.answered_per_episode[episode_id].add(question_id)
-        self.logger.debug(f"Episode {episode_id}: Marked {question_id} as answered")
-    
-    def _initialize_episode_state(self, episode_id: int) -> None:
-        """
-        Initialize tracking state for new episode
-        
-        Called automatically on episode transition.
-        
-        Args:
-            episode_id (int): Episode to initialize
-        """
-        self.answered_per_episode[episode_id] = set()
-        self.section_index_per_episode[episode_id] = 0
-        self.core_complete_per_episode[episode_id] = False
-        self.triggered_blocks_per_episode[episode_id] = []
-        self.blocks_asked_per_episode[episode_id] = set()
-        
-        self.logger.info(f"Episode {episode_id}: Initialized question tracking state")
-    
-    def _get_next_from_section(
-        self, 
-        section_name: str, 
-        episode_id: int, 
-        answered: Set[str]
-    ) -> Optional[dict]:
-        """
-        Get next applicable question from a section
-        
-        Args:
-            section_name (str): Section identifier
-            episode_id (int): Current episode
-            answered (Set[str]): Set of answered question IDs
+            episode_data: Current episode state with extracted fields
             
         Returns:
-            dict: Question object or None if section complete
-        """
-        questions = self.ruleset["sections"][section_name]
-        
-        for question in questions:
-            question_id = question["id"]
+            set[str]: Block IDs that should be activated (e.g., {'block_1', 'block_3'})
             
-            # Skip if already answered
-            if question_id in answered:
-                self.logger.debug(
-                    f"Episode {episode_id}: Question {question_id} already answered, skipping"
-                )
+        Note:
+            Returns ALL blocks whose conditions are met, not just new ones.
+            Caller should compare with existing activated set to find new activations.
+        """
+        activated_blocks = set()
+        
+        for trigger_name, trigger_def in self.trigger_conditions.items():
+            condition = trigger_def.get("condition", {})
+            activates = trigger_def.get("activates")
+            
+            # Evaluate trigger condition
+            if self._evaluate_dsl(condition, episode_data):
+                # Add activated block(s)
+                if isinstance(activates, list):
+                    activated_blocks.update(activates)
+                else:
+                    activated_blocks.add(activates)
+        
+        return activated_blocks
+    
+    def is_block_complete(self, block_id: str, episode_data: dict) -> bool:
+        """
+        Check if all questions in a block are answered or skipped.
+        
+        Args:
+            block_id: Block identifier (e.g., 'block_1')
+            episode_data: Current episode state
+            
+        Returns:
+            True if block is complete (all questions answered or ineligible)
+        """
+        if block_id not in self.follow_up_blocks:
+            logger.warning(f"Unknown block: {block_id}")
+            return True  # Treat unknown block as complete
+        
+        questions_answered = episode_data.get("questions_answered", set())
+        block_questions = self.follow_up_blocks[block_id].get("questions", [])
+        
+        for question in block_questions:
+            q_id = question.get("id")
+            
+            # If answered, continue
+            if q_id in questions_answered:
                 continue
             
-            # Skip if field already collected (patient volunteered info)
-            if "field" in question:
-                if self.state.has_episode_field(episode_id, question["field"]):
-                    field_value = self.state.get_episode_field(episode_id, question["field"])
-                    self.logger.debug(
-                        f"Episode {episode_id}: Field {question['field']} already collected "
-                        f"(value: {field_value}), skipping {question_id}"
-                    )
-                    continue
-            
-            # Check conditional
-            if question.get("type") == "conditional":
-                condition_name = question.get("condition")
-                if not condition_name:
-                    self.logger.error(
-                        f"Episode {episode_id}: Question {question_id} marked conditional "
-                        f"but no condition specified"
-                    )
-                    continue
-                
-                if not self._evaluate_condition(condition_name, episode_id):
-                    self.logger.debug(
-                        f"Episode {episode_id}: Question {question_id} condition "
-                        f"'{condition_name}' = False, skipping"
-                    )
-                    continue
-                else:
-                    self.logger.debug(
-                        f"Episode {episode_id}: Question {question_id} condition "
-                        f"'{condition_name}' = True, asking"
-                    )
-            
-            # Question is applicable
-            return question
-        
-        # No applicable questions remain in section
-        return None
-    
-    def _get_next_from_block(
-        self, 
-        block_name: str, 
-        episode_id: int, 
-        answered: Set[str]
-    ) -> Optional[dict]:
-        """
-        Get next applicable question from a triggered block
-        
-        Args:
-            block_name (str): Block identifier (e.g., "block_1")
-            episode_id (int): Current episode
-            answered (Set[str]): Set of answered question IDs
-            
-        Returns:
-            dict: Question object or None if block complete
-        """
-        if block_name not in self.ruleset["follow_up_blocks"]:
-            self.logger.error(
-                f"Episode {episode_id}: Block {block_name} not found in ruleset"
-            )
-            return None
-        
-        block = self.ruleset["follow_up_blocks"][block_name]
-        questions = block["questions"]
-        
-        for question in questions:
-            question_id = question["id"]
-            
-            # Skip if already answered
-            if question_id in answered:
-                self.logger.debug(
-                    f"Episode {episode_id}: Question {question_id} already answered, skipping"
-                )
+            # If not eligible (condition not met), skip
+            if not self._is_eligible(question, episode_data):
                 continue
             
-            # Skip if field already collected
-            if "field" in question:
-                if self.state.has_episode_field(episode_id, question["field"]):
-                    field_value = self.state.get_episode_field(episode_id, question["field"])
-                    self.logger.debug(
-                        f"Episode {episode_id}: Field {question['field']} already collected "
-                        f"(value: {field_value}), skipping {question_id}"
-                    )
-                    continue
-            
-            # Check conditional
-            if question.get("type") == "conditional":
-                condition_name = question.get("condition")
-                if not condition_name:
-                    self.logger.error(
-                        f"Episode {episode_id}: Question {question_id} marked conditional "
-                        f"but no condition specified"
-                    )
-                    continue
-                
-                if not self._evaluate_condition(condition_name, episode_id):
-                    self.logger.debug(
-                        f"Episode {episode_id}: Question {question_id} condition "
-                        f"'{condition_name}' = False, skipping"
-                    )
-                    continue
-                else:
-                    self.logger.debug(
-                        f"Episode {episode_id}: Question {question_id} condition "
-                        f"'{condition_name}' = True, asking"
-                    )
-            
-            # Question is applicable
-            return question
+            # Found unanswered, eligible question
+            return False
         
-        # No applicable questions remain in block
-        return None
+        return True
     
-    def _evaluate_condition(self, condition_name: str, episode_id: int) -> bool:
+    # =========================================================================
+    # Condition Evaluation
+    # =========================================================================
+    
+    def _evaluate_condition(self, condition_name: str, episode_data: dict) -> bool:
         """
-        Evaluate a named condition from the ruleset (episode-scoped)
+        Evaluate a named condition against episode data.
         
         Args:
-            condition_name (str): Condition identifier
-            episode_id (int): Episode to evaluate condition for
+            condition_name: Key in ruleset['conditions']
+            episode_data: Current episode state
             
         Returns:
             bool: True if condition met, False otherwise
             
-        Raises:
-            KeyError: If condition not defined in ruleset
+        Note:
+            Missing fields evaluate to False (field doesn't exist = condition not met)
         """
-        if condition_name not in self.ruleset["conditions"]:
-            raise KeyError(
-                f"Condition '{condition_name}' not defined in ruleset"
-            )
+        condition_def = self.conditions.get(condition_name)
         
-        condition = self.ruleset["conditions"][condition_name]
-        check_string = condition["check"]
+        if not condition_def:
+            logger.warning(f"Unknown condition: {condition_name}")
+            return False
         
-        result = self._parse_condition_string(check_string, episode_id)
-        self.logger.debug(
-            f"Episode {episode_id}: Condition '{condition_name}': "
-            f"{check_string} = {result}"
-        )
-        return result
+        return self._evaluate_dsl(condition_def, episode_data)
     
-    def _parse_condition_string(self, check_string: str, episode_id: int) -> bool:
+    def _evaluate_dsl(self, dsl: dict, episode_data: dict) -> bool:
         """
-        Parse and evaluate a condition check string (episode-scoped)
+        Evaluate DSL condition structure.
         
-        Handles:
-        - Equality: "field == 'value'"
-        - Inequality: "field != 'value'"
-        - Membership: "field in ['a', 'b']"
-        - Boolean: "field == True"
-        - Null checks: "field != None"
-        - Logical operators: "condition1 AND condition2"
+        Supports: all, any, eq, ne, is_true, is_false, exists, contains_lower
         
         Args:
-            check_string (str): Condition expression to evaluate
-            episode_id (int): Episode to read fields from
+            dsl: DSL condition dict
+            episode_data: Current episode state
             
         Returns:
-            bool: Result of evaluation
-            
-        Raises:
-            ValueError: If expression is malformed
+            bool: Evaluation result
         """
-        # Handle AND operators
-        if " AND " in check_string:
-            parts = check_string.split(" AND ")
-            results = [
-                self._parse_condition_string(part.strip(), episode_id) 
-                for part in parts
-            ]
-            return all(results)
+        if not dsl:
+            return True  # Empty condition is vacuously true
         
-        # Handle OR operators
-        if " OR " in check_string:
-            parts = check_string.split(" OR ")
-            results = [
-                self._parse_condition_string(part.strip(), episode_id) 
-                for part in parts
-            ]
-            return any(results)
+        # Logical operators
+        if "all" in dsl:
+            conditions = dsl["all"]
+            if not conditions:
+                return True  # Empty all = vacuous truth
+            return all(self._evaluate_dsl(sub, episode_data) for sub in conditions)
         
-        # Single expression - parse it
-        return self._evaluate_single_expression(check_string, episode_id)
-    
-    def _evaluate_single_expression(self, expression: str, episode_id: int) -> bool:
-        """
-        Evaluate a single comparison expression (episode-scoped)
+        if "any" in dsl:
+            conditions = dsl["any"]
+            if not conditions:
+                return False  # Empty any = no conditions met
+            return any(self._evaluate_dsl(sub, episode_data) for sub in conditions)
         
-        Args:
-            expression (str): Single expression like "field == 'value'"
-            episode_id (int): Episode to read field from
-            
-        Returns:
-            bool: Result of evaluation
-            
-        Raises:
-            ValueError: If expression format is invalid
-        """
-        expression = expression.strip()
+        # Comparison operators
+        if "eq" in dsl:
+            field, expected = dsl["eq"]
+            actual = episode_data.get(field)
+            return actual == expected
         
-        # Handle membership check: "field in ['a', 'b']"
-        if " in [" in expression:
-            field_name, values_str = expression.split(" in ")
-            field_name = field_name.strip()
-            
-            # Extract list values
-            values_str = values_str.strip()
-            if not (values_str.startswith('[') and values_str.endswith(']')):
-                raise ValueError(f"Invalid list format in expression: {expression}")
-            
-            # Parse list - handle both 'value' and "value" quotes
-            values_str = values_str[1:-1]  # Remove [ ]
-            values = []
-            for val in values_str.split(','):
-                val = val.strip()
-                if val.startswith("'") and val.endswith("'"):
-                    values.append(val[1:-1])
-                elif val.startswith('"') and val.endswith('"'):
-                    values.append(val[1:-1])
-                else:
-                    raise ValueError(f"List values must be quoted: {expression}")
-            
-            # Episode-scoped field read
-            field_value = self.state.get_episode_field(episode_id, field_name)
-            result = field_value in values
-            self.logger.debug(
-                f"Episode {episode_id}: Membership check: "
-                f"{field_name} (={field_value}) in {values} = {result}"
-            )
-            return result
+        if "ne" in dsl:
+            field, expected = dsl["ne"]
+            actual = episode_data.get(field)
+            return actual != expected
         
-        # Handle equality/inequality: "field == 'value'" or "field != 'value'"
-        if " == " in expression:
-            operator = "=="
-            field_name, expected = expression.split(" == ")
-        elif " != " in expression:
-            operator = "!="
-            field_name, expected = expression.split(" != ")
-        else:
-            raise ValueError(f"Unsupported operator in expression: {expression}")
+        # Boolean operators
+        if "is_true" in dsl:
+            field = dsl["is_true"]
+            return episode_data.get(field) is True
         
-        field_name = field_name.strip()
-        expected = expected.strip()
+        if "is_false" in dsl:
+            field = dsl["is_false"]
+            return episode_data.get(field) is False
         
-        # Episode-scoped field read
-        field_value = self.state.get_episode_field(episode_id, field_name)
+        # Existence operator
+        if "exists" in dsl:
+            field = dsl["exists"]
+            return field in episode_data and episode_data[field] is not None
         
-        # Parse expected value
-        if expected == "True":
-            expected_value = True
-        elif expected == "False":
-            expected_value = False
-        elif expected == "None":
-            expected_value = None
-        elif expected.startswith("'") and expected.endswith("'"):
-            expected_value = expected[1:-1]
-        elif expected.startswith('"') and expected.endswith('"'):
-            expected_value = expected[1:-1]
-        else:
-            raise ValueError(
-                f"Expected value must be True/False/None or quoted string: {expression}"
-            )
+        # String operator
+        if "contains_lower" in dsl:
+            field, substring = dsl["contains_lower"]
+            value = episode_data.get(field)
+            if not isinstance(value, str):
+                return False
+            return substring.lower() in value.lower()
         
-        # Evaluate
-        if operator == "==":
-            result = field_value == expected_value
-        else:  # !=
-            # Special handling for None checks
-            if expected_value is None:
-                result = field_value is not None
-            else:
-                result = field_value != expected_value
-        
-        self.logger.debug(
-            f"Episode {episode_id}: Comparison: "
-            f"{field_name} (={field_value}) {operator} {expected_value} = {result}"
-        )
-        return result
-    
-    def _check_triggers(self, episode_id: int) -> None:
-        """
-        Check all trigger conditions and activate applicable blocks (episode-scoped)
-        
-        Modifies self.triggered_blocks_per_episode[episode_id] in place
-        
-        Args:
-            episode_id (int): Episode to evaluate triggers for
-        """
-        self.logger.info(f"Episode {episode_id}: Evaluating trigger conditions")
-        
-        triggered = []
-        
-        for trigger_name, trigger_config in self.ruleset["trigger_conditions"].items():
-            check_string = trigger_config["check"]
-            activates = trigger_config["activates"]
-            
-            # Evaluate trigger condition (episode-scoped)
+        # Numeric comparison operators
+        if "gte" in dsl:
+            field, threshold = dsl["gte"]
+            value = episode_data.get(field)
+            if value is None:
+                return False
             try:
-                result = self._parse_condition_string(check_string, episode_id)
-                
-                if result:
-                    self.logger.info(
-                        f"Episode {episode_id}: Trigger '{trigger_name}' = True, "
-                        f"activating {activates}"
-                    )
-                    
-                    # Handle both single block and list of blocks
-                    if isinstance(activates, list):
-                        triggered.extend(activates)
-                    else:
-                        triggered.append(activates)
-                else:
-                    self.logger.debug(f"Episode {episode_id}: Trigger '{trigger_name}' = False")
-                    
-            except Exception as e:
-                self.logger.error(
-                    f"Episode {episode_id}: Error evaluating trigger '{trigger_name}': {e}"
-                )
+                return float(value) >= float(threshold)
+            except (TypeError, ValueError):
+                return False
         
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_blocks = []
-        for block in triggered:
-            if block not in seen:
-                seen.add(block)
-                unique_blocks.append(block)
+        if "gt" in dsl:
+            field, threshold = dsl["gt"]
+            value = episode_data.get(field)
+            if value is None:
+                return False
+            try:
+                return float(value) > float(threshold)
+            except (TypeError, ValueError):
+                return False
         
-        self.triggered_blocks_per_episode[episode_id] = unique_blocks
+        if "lte" in dsl:
+            field, threshold = dsl["lte"]
+            value = episode_data.get(field)
+            if value is None:
+                return False
+            try:
+                return float(value) <= float(threshold)
+            except (TypeError, ValueError):
+                return False
         
-        if unique_blocks:
-            self.logger.info(
-                f"Episode {episode_id}: Triggered blocks: {unique_blocks}"
-            )
-        else:
-            self.logger.info(f"Episode {episode_id}: No triggers activated")
+        if "lt" in dsl:
+            field, threshold = dsl["lt"]
+            value = episode_data.get(field)
+            if value is None:
+                return False
+            try:
+                return float(value) < float(threshold)
+            except (TypeError, ValueError):
+                return False
+        
+        # Unknown operator
+        logger.warning(f"Unknown DSL operator: {list(dsl.keys())}")
+        return False
     
-    def get_progress_summary(self, episode_id: int) -> dict:
+    # =========================================================================
+    # Question Selection Helpers
+    # =========================================================================
+    
+    def _is_eligible(self, question: dict, episode_data: dict) -> bool:
         """
-        Get summary of consultation progress for specific episode
+        Determine if a question is eligible to be asked.
+        
+        Rules:
+        - Probe question: always eligible
+        - Conditional question: eligible only if condition is true
+        - Missing 'type' or 'condition': treated as probe
         
         Args:
-            episode_id (int): Episode to query
+            question: Question dict from ruleset
+            episode_data: Current episode state
             
         Returns:
-            dict: Progress information
-            
-        Raises:
-            ValueError: If episode not initialized
+            True if question should be asked
         """
-        if episode_id not in self.answered_per_episode:
-            raise ValueError(
-                f"Episode {episode_id} not initialized. "
-                f"Call get_next_question() first."
-            )
+        q_type = question.get("type", "probe")
         
-        answered = self.answered_per_episode[episode_id]
+        # Probe questions are always eligible
+        if q_type == "probe":
+            return True
         
-        # Count questions in each section
-        section_progress = {}
-        for section_name in self.section_order:
-            questions = self.ruleset["sections"][section_name]
-            total = len(questions)
-            answered_count = sum(1 for q in questions if q["id"] in answered)
-            section_progress[section_name] = {
-                "answered": answered_count,
-                "total": total,
-                "complete": answered_count == total
-            }
+        # Conditional questions require condition to be met
+        if q_type == "conditional":
+            condition_name = question.get("condition")
+            
+            # Missing condition treated as probe (always eligible)
+            if not condition_name:
+                return True
+            
+            return self._evaluate_condition(condition_name, episode_data)
         
-        # Count triggered block questions
-        block_progress = {}
-        triggered_blocks = self.triggered_blocks_per_episode.get(episode_id, [])
+        # Unknown type - treat as probe
+        return True
+    
+    def _get_next_block_question(
+        self, 
+        block_id: str, 
+        questions_answered: set, 
+        episode_data: dict
+    ) -> Optional[dict]:
+        """
+        Get next unanswered, eligible question from a block.
         
-        for block_name in triggered_blocks:
-            block = self.ruleset["follow_up_blocks"][block_name]
-            questions = block["questions"]
-            total = len(questions)
-            answered_count = sum(1 for q in questions if q["id"] in answered)
-            block_progress[block_name] = {
-                "name": block["name"],
-                "answered": answered_count,
-                "total": total,
-                "complete": answered_count == total
-            }
+        Args:
+            block_id: Block identifier
+            questions_answered: Set of answered question IDs
+            episode_data: Current episode state
+            
+        Returns:
+            Question dict or None if block complete
+        """
+        if block_id not in self.follow_up_blocks:
+            return None
         
-        return {
-            "episode_id": episode_id,
-            "core_sections_complete": self.core_complete_per_episode.get(episode_id, False),
-            "current_section": (
-                self.section_order[self.section_index_per_episode[episode_id]] 
-                if self.section_index_per_episode[episode_id] < len(self.section_order) 
-                else None
-            ),
-            "section_progress": section_progress,
-            "triggered_blocks": triggered_blocks,
-            "block_progress": block_progress,
-            "total_questions_answered": len(answered)
-        }
+        block_questions = self.follow_up_blocks[block_id].get("questions", [])
+        
+        for question in block_questions:
+            q_id = question.get("id")
+            
+            # Skip answered
+            if q_id in questions_answered:
+                continue
+            
+            # Skip ineligible
+            if not self._is_eligible(question, episode_data):
+                continue
+            
+            return question
+        
+        return None
+    
+    # =========================================================================
+    # Validation
+    # =========================================================================
+    
+    def _validate_ruleset(self):
+        """
+        Validate ruleset structure on initialization.
+        
+        Checks:
+        - section_order exists
+        - All sections in section_order are defined
+        - All condition references exist
+        - All trigger block references exist
+        - No duplicate question IDs in blocks
+        - No empty block question arrays
+        - All questions have 'id' field
+        
+        Raises:
+            ValueError: If validation fails
+        """
+        errors = []
+        
+        # Check section_order exists
+        if not self.section_order:
+            errors.append("Missing 'section_order' in ruleset")
+        else:
+            # Check all sections in order are defined
+            for section_name in self.section_order:
+                if section_name not in self.sections:
+                    errors.append(f"Section '{section_name}' in section_order but not defined in sections")
+        
+        # Collect all question IDs for duplicate detection
+        all_question_ids = set()
+        
+        # Validate section questions
+        for section_name, questions in self.sections.items():
+            for i, question in enumerate(questions):
+                # Check question has ID
+                if "id" not in question:
+                    errors.append(f"Question at index {i} in section '{section_name}' missing 'id'")
+                    continue
+                
+                q_id = question["id"]
+                
+                # Check for global duplicates
+                if q_id in all_question_ids:
+                    errors.append(f"Duplicate question id '{q_id}'")
+                all_question_ids.add(q_id)
+                
+                # Check condition reference
+                if question.get("type") == "conditional":
+                    condition_name = question.get("condition")
+                    if condition_name and condition_name not in self.conditions:
+                        errors.append(
+                            f"Question '{q_id}' references undefined condition '{condition_name}'"
+                        )
+        
+        # Validate follow-up blocks
+        for block_id, block_def in self.follow_up_blocks.items():
+            questions = block_def.get("questions", [])
+            
+            # Check for empty questions array
+            if not questions:
+                errors.append(f"Block '{block_id}' has empty questions array")
+                continue
+            
+            block_question_ids = set()
+            
+            for i, question in enumerate(questions):
+                # Check question has ID
+                if "id" not in question:
+                    errors.append(f"Question at index {i} in block '{block_id}' missing 'id'")
+                    continue
+                
+                q_id = question["id"]
+                
+                # Check for duplicates within block
+                if q_id in block_question_ids:
+                    errors.append(f"Duplicate question id '{q_id}' in block '{block_id}'")
+                block_question_ids.add(q_id)
+                
+                # Check for global duplicates
+                if q_id in all_question_ids:
+                    errors.append(f"Duplicate question id '{q_id}'")
+                all_question_ids.add(q_id)
+                
+                # Check condition reference
+                if question.get("type") == "conditional":
+                    condition_name = question.get("condition")
+                    if condition_name and condition_name not in self.conditions:
+                        errors.append(
+                            f"Question '{q_id}' in block '{block_id}' references "
+                            f"undefined condition '{condition_name}'"
+                        )
+        
+        # Validate trigger conditions
+        for trigger_name, trigger_def in self.trigger_conditions.items():
+            activates = trigger_def.get("activates")
+            
+            if not activates:
+                errors.append(f"Trigger '{trigger_name}' missing 'activates' field")
+                continue
+            
+            # Check block references
+            block_ids = activates if isinstance(activates, list) else [activates]
+            
+            for block_id in block_ids:
+                if block_id not in self.follow_up_blocks:
+                    errors.append(
+                        f"Trigger '{trigger_name}' activates undefined block '{block_id}'"
+                    )
+        
+        # Raise if any errors
+        if errors:
+            error_msg = "Ruleset validation failed:\n  - " + "\n  - ".join(errors)
+            raise ValueError(error_msg)
+        
+        logger.info("Ruleset validation passed")

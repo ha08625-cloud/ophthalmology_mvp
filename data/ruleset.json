@@ -1,4 +1,14 @@
 {
+  "section_order": [
+    "vision_loss",
+    "visual_disturbances",
+    "headache",
+    "eye_pain",
+    "appearance_changes",
+    "healthcare_contacts",
+    "other_symptoms",
+    "functional_impact"
+  ],
   "conditional_definitions": {
     "partial_visual_loss": "patient reports they can see something but it's reduced/blurred/dim",
     "partial_visual_loss_worsened": "patient confirmed partial loss continued worsening after onset",
@@ -7,119 +17,406 @@
   },
   "conditions": {
     "vl_interval_visual_loss_is_true": {
-      "check": "vl_interval_visual_loss == True"
+      "all": [
+        {
+          "is_true": "vl_interval_visual_loss"
+        }
+      ]
     },
     "vl_improved_true": {
-      "check": "vl_improved == True"
+      "all": [
+        {
+          "is_true": "vl_improved"
+        }
+      ]
     },
     "partial_visual_loss": {
-      "check": "vl_degree == 'partial'"
+      "all": [
+        {
+          "eq": [
+            "vl_degree",
+            "partial"
+          ]
+        }
+      ]
     },
     "worsening": {
-      "check": "vl_worsening == True"
+      "all": [
+        {
+          "is_true": "vl_worsening"
+        }
+      ]
     },
     "partial_monocular_loss": {
-      "check": "vl_single_eye == 'single' AND vl_degree != 'total'"
+      "all": [
+        {
+          "eq": [
+            "vl_single_eye",
+            "single"
+          ]
+        },
+        {
+          "ne": [
+            "vl_degree",
+            "total"
+          ]
+        }
+      ]
     },
     "complete_monocular_loss": {
-      "check": "vl_single_eye == 'single' AND vl_degree == 'total'"
+      "all": [
+        {
+          "eq": [
+            "vl_single_eye",
+            "single"
+          ]
+        },
+        {
+          "eq": [
+            "vl_degree",
+            "total"
+          ]
+        }
+      ]
     },
     "vl_intermittent": {
-      "check": "vl_temporal_pattern == 'intermittent'"
+      "all": [
+        {
+          "eq": [
+            "vl_temporal_pattern",
+            "intermittent"
+          ]
+        }
+      ]
     },
     "h_intermittent": {
-      "check": "h_temporal_pattern == 'intermittent'"
+      "all": [
+        {
+          "eq": [
+            "h_temporal_pattern",
+            "intermittent"
+          ]
+        }
+      ]
     },
     "agnosia": {
-      "check": "agnosia_present == True"
+      "all": [
+        {
+          "is_true": "agnosia_present"
+        }
+      ]
     },
     "headache": {
-      "check": "h_present == True"
+      "all": [
+        {
+          "is_true": "h_present"
+        }
+      ]
     },
     "eye_pain": {
-      "check": "ep_present == True"
+      "all": [
+        {
+          "is_true": "ep_present"
+        }
+      ]
     },
     "hallucinations_present": {
-      "check": "hallucinations_present == True"
+      "all": [
+        {
+          "is_true": "hallucinations_present"
+        }
+      ]
     },
     "cp_present": {
-      "check": "cp_present == True"
+      "all": [
+        {
+          "is_true": "cp_present"
+        }
+      ]
     },
     "vp_present": {
-      "check": "vp_present == True"
+      "all": [
+        {
+          "is_true": "vp_present"
+        }
+      ]
     },
     "dp_present": {
-      "check": "dp_present == True"
+      "all": [
+        {
+          "is_true": "dp_present"
+        }
+      ]
     },
     "hc_contact_occurred": {
-      "check": "hc_contact_occurred == True"
+      "all": [
+        {
+          "is_true": "hc_contact_occurred"
+        }
+      ]
     },
     "appearance_changes_present": {
-      "check": "appearance_changes_present == True"
+      "all": [
+        {
+          "is_true": "appearance_changes_present"
+        }
+      ]
     },
     "alexia": {
-      "check": "difficulty_reading == True"
+      "all": [
+        {
+          "is_true": "difficulty_reading"
+        }
+      ]
     },
     "prosopagnosia": {
-      "check": "difficulty_recognising_people == True"
+      "all": [
+        {
+          "is_true": "difficulty_recognising_people"
+        }
+      ]
     },
     "akinetopsia": {
-      "check": "can_see_moving_water == False"
+      "all": [
+        {
+          "is_false": "can_see_moving_water"
+        }
+      ]
     },
     "vl_single_eye_is_single": {
-      "check": "vl_single_eye == 'single'"
+      "all": [
+        {
+          "eq": [
+            "vl_single_eye",
+            "single"
+          ]
+        }
+      ]
     },
     "vl_single_eye_is_both": {
-      "check": "vl_single_eye == 'both'"
+      "all": [
+        {
+          "eq": [
+            "vl_single_eye",
+            "both"
+          ]
+        }
+      ]
     },
     "single_eye_left": {
-      "check": "vl_single_eye == 'single' AND vl_laterality == 'left'"
+      "all": [
+        {
+          "eq": [
+            "vl_single_eye",
+            "single"
+          ]
+        },
+        {
+          "eq": [
+            "vl_laterality",
+            "left"
+          ]
+        }
+      ]
     },
     "single_eye_right": {
-      "check": "vl_single_eye == 'single' AND vl_laterality == 'right'"
+      "all": [
+        {
+          "eq": [
+            "vl_single_eye",
+            "single"
+          ]
+        },
+        {
+          "eq": [
+            "vl_laterality",
+            "right"
+          ]
+        }
+      ]
     },
     "ep_single_eye_is_single": {
-      "check": "ep_single_eye == 'single'"
+      "all": [
+        {
+          "eq": [
+            "ep_single_eye",
+            "single"
+          ]
+        }
+      ]
     },
     "ep_single_eye_is_both": {
-      "check": "ep_single_eye == 'both'"
+      "all": [
+        {
+          "eq": [
+            "ep_single_eye",
+            "both"
+          ]
+        }
+      ]
+    },
+    "ep_present": {
+      "all": [
+        {
+          "is_true": "ep_present"
+        }
+      ]
+    },
+    "ac_present": {
+      "all": [
+        {
+          "is_true": "appearance_changes_present"
+        }
+      ]
     }
-    
   },
   "trigger_conditions": {
     "transient_acute_monocular_loss": {
-      "check": "vl_single_eye == 'single' AND vl_onset_speed == 'acute' AND vl_temporal_pattern == 'transient'",
+      "condition": {
+        "all": [
+          {
+            "eq": [
+              "vl_single_eye",
+              "single"
+            ]
+          },
+          {
+            "eq": [
+              "vl_onset_speed",
+              "acute"
+            ]
+          },
+          {
+            "eq": [
+              "vl_temporal_pattern",
+              "transient"
+            ]
+          }
+        ]
+      },
       "activates": "block_2"
     },
     "altitudinal_defect": {
-      "check": "vl_field != None AND ('upper half' in vl_field.lower() OR 'lower half' in vl_field.lower())",
+      "condition": {
+        "any": [
+          {
+            "all": [
+              {
+                "exists": "vl_field"
+              },
+              {
+                "contains_lower": [
+                  "vl_field",
+                  "upper half"
+                ]
+              }
+            ]
+          }
+        ]
+      },
       "activates": "block_2"
     },
     "persistent_chronic_headache": {
-      "check": "h_present == True AND h_temporal_pattern == 'permanent' AND h_onset_weeks >= 6",
+      "condition": {
+        "all": [
+          {
+            "is_true": "h_present"
+          },
+          {
+            "eq": [
+              "h_temporal_pattern",
+              "permanent"
+            ]
+          },
+          {
+            "gte": [
+              "h_onset_weeks",
+              6
+            ]
+          }
+        ]
+      },
       "activates": "block_2"
     },
     "subacute_monocular_loss_hours_days": {
-      "check": "vl_single_eye == 'single' AND vl_onset_speed == 'subacute'",
+      "condition": {
+        "all": [
+          {
+            "eq": [
+              "vl_single_eye",
+              "single"
+            ]
+          },
+          {
+            "eq": [
+              "vl_onset_speed",
+              "subacute"
+            ]
+          }
+        ]
+      },
       "activates": "block_1"
     },
     "chronic_visual_loss": {
-      "check": "vl_present == True AND vl_onset_speed == 'chronic'",
+      "condition": {
+        "all": [
+          {
+            "is_true": "vl_present"
+          },
+          {
+            "eq": [
+              "vl_onset_speed",
+              "chronic"
+            ]
+          }
+        ]
+      },
       "activates": [
         "block_3",
         "block_4"
       ]
     },
     "rashes_or_eye_infection": {
-      "check": "ac_rashes == True OR ac_discharge == True",
+      "condition": {
+        "any": [
+          {
+            "is_true": "ac_rashes"
+          },
+          {
+            "is_true": "ac_discharge"
+          }
+        ]
+      },
       "activates": "block_5"
     },
     "agnosia": {
-      "check": "agnosia_present == True",
+      "condition": {
+        "all": [
+          {
+            "is_true": "agnosia_present"
+          }
+        ]
+      },
       "activates": "block_6"
     },
     "hemichromatopsia": {
-      "check": "cp_field != None AND ('left side' in cp_field.lower() OR 'right side' in cp_field.lower())",
+      "condition": {
+        "any": [
+          {
+            "all": [
+              {
+                "exists": "cp_field"
+              },
+              {
+                "contains_lower": [
+                  "cp_field",
+                  "left side"
+                ]
+              }
+            ]
+          }
+        ]
+      },
       "activates": "block_6"
     }
   },
@@ -560,7 +857,7 @@
         "field": "nystagmus_present",
         "field_type": "boolean"
       },
-            {
+      {
         "id": "vd_25",
         "type": "probe",
         "question": "Are you experiencing any visual hallucinations?",
@@ -592,7 +889,6 @@
         "field": "h_present",
         "field_type": "boolean"
       },
-      
       {
         "id": "h_2",
         "type": "conditional",
@@ -609,7 +905,7 @@
         "field": "h_first_onset",
         "field_type": "text"
       },
-            {
+      {
         "id": "h_4",
         "type": "conditional",
         "question": "Is it episodic, coming and going, or persistent and constant?",
@@ -638,7 +934,7 @@
         "field": "h_flareup_frequency",
         "field_type": "text"
       },
-      {        
+      {
         "id": "h_7",
         "type": "conditional",
         "question": "In between flare-ups, how bad is the headache?",
@@ -650,7 +946,7 @@
           11
         ]
       },
-      {   
+      {
         "id": "h_8",
         "type": "conditional",
         "question": "And how about at it's worst?  How would you rate the pain on a scale of 1-10?",
@@ -670,7 +966,6 @@
         "field": "h_location",
         "field_type": "text"
       },
-
       {
         "id": "h_10",
         "type": "conditional",

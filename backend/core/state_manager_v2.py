@@ -21,6 +21,8 @@ API Philosophy:
 
 import logging
 from typing import List, Dict, Any, Optional
+import json
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -28,18 +30,27 @@ logger = logging.getLogger(__name__)
 class StateManagerV2:
     """Manages multi-episode consultation state"""
     
-    def __init__(self):
-        """Initialize empty multi-episode state"""
-        self.episodes = []  # List of episode dicts
-        self.shared_data = {
-            'past_medical_history': [],
-            'medications': [],
-            'family_history': [],
-            'social_history': {}
-        }
-        self.dialogue_history = {}  # episode_id -> list of dialogue turns
+    def __init__(self, data_model_path="data/clinical_data_model.json"):
+        """
+        Initialize empty multi-episode state
         
-        logger.info("State Manager V2 initialized (multi-episode)")
+        Args:
+            data_model_path: Path to clinical data model JSON file
+        """
+        # Load clinical data model
+        data_model_path = Path(data_model_path)
+        if not data_model_path.exists():
+            raise FileNotFoundError(f"Clinical data model not found: {data_model_path}")
+            
+        with open(data_model_path, 'r') as f:
+            self.data_model = json.load(f)
+            
+        # Initialize state from template
+        self.episodes = []  # List of episode dicts
+        self.shared_data = self._deep_copy(self.data_model["shared_data_template"])
+        self.dialogue_history = {}  # episode_id -> list of dialogue turns
+
+        logger.info(f"State Manager V2 initialized (multi-episode, model version {self.data_model.get('version', 'unknown')})")
     
     # ========================
     # Episode Management
@@ -66,6 +77,9 @@ class StateManagerV2:
             'symptom_type': symptom_type,
             'currently_active': True,  # Default to active
             'completely_resolved': False,  # Default to unresolved
+            'questions_answered': set(),  # Question Selector V2 prerequisite
+            'follow_up_blocks_activated': set(),  # Question Selector V2 prerequisite
+            'follow_up_blocks_completed': set(),  # Question Selector V2 prerequisite
             # All other fields added dynamically via set_episode_field()
         }
         
@@ -180,6 +194,118 @@ class StateManagerV2:
             int: Number of episodes
         """
         return len(self.episodes)
+    
+    # ========================
+    # Question Tracking (for Question Selector V2)
+    # ========================
+    
+    def mark_question_answered(self, episode_id: int, question_id: str) -> None:
+        """
+        Add question_id to episode's questions_answered set.
+        
+        Args:
+            episode_id: Episode to update (1-indexed)
+            question_id: Question identifier to mark as answered
+            
+        Raises:
+            ValueError: If episode_id doesn't exist
+        """
+        if episode_id < 1 or episode_id > len(self.episodes):
+            raise ValueError(f"Episode {episode_id} does not exist (valid range: 1-{len(self.episodes)})")
+        
+        episode = self.episodes[episode_id - 1]
+        episode['questions_answered'].add(question_id)
+        logger.debug(f"Episode {episode_id}: marked question '{question_id}' as answered")
+    
+    def get_questions_answered(self, episode_id: int) -> set:
+        """
+        Get set of answered question IDs for an episode.
+        
+        Args:
+            episode_id: Episode to query (1-indexed)
+            
+        Returns:
+            set[str]: Copy of questions_answered set
+            
+        Raises:
+            ValueError: If episode_id doesn't exist
+        """
+        if episode_id < 1 or episode_id > len(self.episodes):
+            raise ValueError(f"Episode {episode_id} does not exist (valid range: 1-{len(self.episodes)})")
+        
+        episode = self.episodes[episode_id - 1]
+        return episode['questions_answered'].copy()
+    
+    # ========================
+    # Follow-up Block Tracking (for Question Selector V2)
+    # ========================
+    
+    def activate_follow_up_block(self, episode_id: int, block_id: str) -> None:
+        """
+        Add block_id to episode's follow_up_blocks_activated set.
+        
+        Args:
+            episode_id: Episode to update (1-indexed)
+            block_id: Block identifier to activate (e.g., 'block_1')
+            
+        Raises:
+            ValueError: If episode_id doesn't exist
+        """
+        if episode_id < 1 or episode_id > len(self.episodes):
+            raise ValueError(f"Episode {episode_id} does not exist (valid range: 1-{len(self.episodes)})")
+        
+        episode = self.episodes[episode_id - 1]
+        episode['follow_up_blocks_activated'].add(block_id)
+        logger.info(f"Episode {episode_id}: activated follow-up block '{block_id}'")
+    
+    def complete_follow_up_block(self, episode_id: int, block_id: str) -> None:
+        """
+        Add block_id to episode's follow_up_blocks_completed set.
+        
+        Args:
+            episode_id: Episode to update (1-indexed)
+            block_id: Block identifier to mark complete
+            
+        Raises:
+            ValueError: If episode_id doesn't exist
+        """
+        if episode_id < 1 or episode_id > len(self.episodes):
+            raise ValueError(f"Episode {episode_id} does not exist (valid range: 1-{len(self.episodes)})")
+        
+        episode = self.episodes[episode_id - 1]
+        episode['follow_up_blocks_completed'].add(block_id)
+        logger.info(f"Episode {episode_id}: completed follow-up block '{block_id}'")
+    
+    def get_episode_for_selector(self, episode_id: int) -> Dict[str, Any]:
+        """
+        Get episode data formatted for Question Selector V2.
+        
+        Returns a dict containing all episode fields plus the tracking sets
+        (questions_answered, follow_up_blocks_activated, follow_up_blocks_completed).
+        
+        Args:
+            episode_id: Episode to retrieve (1-indexed)
+            
+        Returns:
+            dict: Episode data with tracking sets (copies, not references)
+            
+        Raises:
+            ValueError: If episode_id doesn't exist
+        """
+        if episode_id < 1 or episode_id > len(self.episodes):
+            raise ValueError(f"Episode {episode_id} does not exist (valid range: 1-{len(self.episodes)})")
+        
+        episode = self.episodes[episode_id - 1]
+        
+        # Create copy with set copies (not references)
+        result = {}
+        for key, value in episode.items():
+            if isinstance(value, set):
+                result[key] = value.copy()
+            else:
+                result[key] = value
+        
+        return result
     
     # ========================
     # Shared Data Management
@@ -351,10 +477,23 @@ class StateManagerV2:
                 'shared_data': {...}
             }
             
-        Note: Does NOT include current_episode_id (UI state)
+        Note: 
+            - Does NOT include current_episode_id (UI state)
+            - Converts sets to sorted lists for JSON serialization
         """
+        # Convert episode sets to lists for JSON serialization
+        serializable_episodes = []
+        for ep in self.episodes:
+            ep_copy = {}
+            for key, value in ep.items():
+                if isinstance(value, set):
+                    ep_copy[key] = sorted(list(value))
+                else:
+                    ep_copy[key] = value
+            serializable_episodes.append(ep_copy)
+        
         return {
-            'episodes': [ep.copy() for ep in self.episodes],
+            'episodes': serializable_episodes,
             'shared_data': self.shared_data.copy()
         }
     
@@ -368,9 +507,22 @@ class StateManagerV2:
                 'shared_data': {...},
                 'dialogue_history': {episode_id: [turns]}
             }
+            
+        Note: Converts sets to sorted lists for consistency
         """
+        # Convert episode sets to lists
+        serializable_episodes = []
+        for ep in self.episodes:
+            ep_copy = {}
+            for key, value in ep.items():
+                if isinstance(value, set):
+                    ep_copy[key] = sorted(list(value))
+                else:
+                    ep_copy[key] = value
+            serializable_episodes.append(ep_copy)
+        
         return {
-            'episodes': [ep.copy() for ep in self.episodes],
+            'episodes': serializable_episodes,
             'shared_data': self.shared_data.copy(),
             'dialogue_history': self.get_all_dialogue_history()
         }
@@ -386,12 +538,7 @@ class StateManagerV2:
         Warning: This erases all data. Use with caution.
         """
         self.episodes.clear()
-        self.shared_data = {
-            'past_medical_history': [],
-            'medications': [],
-            'family_history': [],
-            'social_history': {}
-        }
+        self.shared_data = self._deep_copy(self.data_model["shared_data_template"])
         self.dialogue_history.clear()
         logger.info("State Manager reset - all data cleared")
     
@@ -412,3 +559,20 @@ class StateManagerV2:
             'total_dialogue_turns': total_turns,
             'shared_data_keys': list(self.shared_data.keys())
         }
+    
+    def _deep_copy(self, obj):
+        """
+        Create deep copy of nested dict/list structure
+        
+        Args:
+            obj: Object to copy (dict, list, or primitive)
+            
+        Returns:
+            Deep copy of object
+        """
+        if isinstance(obj, dict):
+            return {k: self._deep_copy(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._deep_copy(item) for item in obj]
+        else:
+            return obj

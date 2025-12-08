@@ -1,0 +1,71 @@
+{
+  "version": "2.0.0",
+  "description": "Clinical data model defining initial state templates for ophthalmology consultations",
+  
+  "shared_data_template": {
+    "past_medical_history": [],
+    
+    "medications": [],
+    
+    "family_history": [],
+    
+    "allergies": [],
+    
+    "social_history": {
+      "smoking": {
+        "status": null,
+        "pack_years": null
+      },
+      "alcohol": {
+        "units_per_week": null,
+        "type": null
+      },
+      "illicit_drugs": {
+        "status": null,
+        "type": null,
+        "frequency": null
+      },
+      "occupation": {
+        "current": null,
+        "past": null
+      }
+    },
+    
+    "systems_review": {
+      "general_health": {
+        "chills": null,
+        "chills_details": null,
+        "fevers": null,
+        "fever_details": null,
+        "night_sweats": null,
+        "night_sweats_details": null,
+        "fatigue": null,
+        "fatigue_details": null,
+        "appetite_or_weight_change": null,
+        "appetite_weight_details": null,
+        "lumps": null,
+        "lumps_details": null,
+        "unwell": null,
+        "unwell_details": null
+      },
+      "neurological": {},
+      "ear_nose_throat": {},
+      "skin": {},
+      "respiratory": {},
+      "cardiovascular": {},
+      "blood": {},
+      "gastrointestinal": {},
+      "musculoskeletal": {},
+      "genitourinary": {},
+      "other": {}
+    }
+  },
+  
+  "notes": {
+    "purpose": "Defines initial empty state for consultation shared data. Episodes are created dynamically with operational fields (episode_id, questions_answered, follow_up_blocks) and do not need a template here.",
+    "usage": "State Manager loads this file once at initialization and deep-copies the shared_data_template for each new consultation.",
+    "arrays": "past_medical_history, medications, family_history, and allergies start as empty arrays. Items are appended as they are collected.",
+    "nested_objects": "social_history and systems_review have pre-defined structure to prevent field name inconsistencies.",
+    "systems_review_status": "Only general_health is fully defined. Other systems (neurological, ENT, etc.) are placeholders to be populated when those sections are implemented."
+  }
+}
