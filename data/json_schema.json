@@ -1,6 +1,6 @@
 {
-  "schema_version": "2.0.2-multi-episode",
-  "description": "Multi-episode ophthalmology consultation schema with episode array and shared data",
+  "schema_version": "2.1.0-multi-episode",
+  "description": "Multi-episode ophthalmology consultation schema with episode array and shared data. Updated to match State Manager V2 output.",
   
   "metadata": {
     "consultation_id": {"type": "string", "required": true},
@@ -11,14 +11,26 @@
   
   "episodes": {
     "type": "array",
-    "description": "Array of symptom episodes, each representing a distinct clinical presentation",
+    "description": "Array of symptom episodes, each representing a distinct clinical presentation. Episodes with no clinical data (only metadata) are excluded from export.",
     "items": {
       "type": "object",
       "properties": {
         "episode_id": {
           "type": "integer",
           "required": true,
-          "description": "Unique identifier for this episode (1, 2, 3, ...)"
+          "description": "Unique identifier for this episode (1, 2, 3, ...). 1-indexed, strictly increasing, no gaps in exported array."
+        },
+        "timestamp_started": {
+          "type": "string",
+          "format": "iso8601",
+          "required": true,
+          "description": "ISO 8601 timestamp when episode was created (UTC)"
+        },
+        "timestamp_last_updated": {
+          "type": "string",
+          "format": "iso8601",
+          "required": true,
+          "description": "ISO 8601 timestamp when episode was last modified (UTC)"
         },
         
         "vision_loss": {
@@ -584,20 +596,106 @@
       }
     },
     
+    "allergies": {
+      "type": "array",
+      "description": "Known allergies",
+      "items": {
+        "allergen": {"type": "text"},
+        "reaction": {"type": "text"}
+      }
+    },
+    
     "social_history": {
-      "smoking_status": {"type": "categorical", "valid_values": ["never", "current", "former"]},
-      "alcohol_use": {"type": "text"},
-      "occupation": {"type": "text"},
-      "living_situation": {"type": "text"}
+      "description": "Social history with nested structure",
+      "smoking": {
+        "status": {
+          "type": "categorical",
+          "valid_values": ["never", "current", "former"],
+          "description": "Smoking status"
+        },
+        "pack_years": {
+          "type": "integer",
+          "description": "Pack-years if former or current smoker"
+        }
+      },
+      "alcohol": {
+        "units_per_week": {
+          "type": "integer",
+          "description": "Units of alcohol per week"
+        },
+        "type": {
+          "type": "text",
+          "description": "Type of alcohol consumed"
+        }
+      },
+      "illicit_drugs": {
+        "status": {
+          "type": "categorical",
+          "valid_values": ["never", "current", "former"],
+          "description": "Illicit drug use status"
+        },
+        "type": {
+          "type": "text",
+          "description": "Type of drugs used"
+        },
+        "frequency": {
+          "type": "text",
+          "description": "Frequency of use"
+        }
+      },
+      "occupation": {
+        "current": {
+          "type": "text",
+          "description": "Current occupation"
+        },
+        "past": {
+          "type": "text",
+          "description": "Past relevant occupations"
+        }
+      }
+    },
+    
+    "systems_review": {
+      "description": "Systems review placeholder - only general_health currently populated",
+      "general_health": {
+        "chills": {"type": "boolean"},
+        "chills_details": {"type": "text"},
+        "fevers": {"type": "boolean"},
+        "fever_details": {"type": "text"},
+        "night_sweats": {"type": "boolean"},
+        "night_sweats_details": {"type": "text"},
+        "fatigue": {"type": "boolean"},
+        "fatigue_details": {"type": "text"},
+        "appetite_or_weight_change": {"type": "boolean"},
+        "appetite_weight_details": {"type": "text"},
+        "lumps": {"type": "boolean"},
+        "lumps_details": {"type": "text"},
+        "unwell": {"type": "boolean"},
+        "unwell_details": {"type": "text"}
+      },
+      "neurological": {"type": "object", "description": "Placeholder - to be populated"},
+      "ear_nose_throat": {"type": "object", "description": "Placeholder - to be populated"},
+      "skin": {"type": "object", "description": "Placeholder - to be populated"},
+      "respiratory": {"type": "object", "description": "Placeholder - to be populated"},
+      "cardiovascular": {"type": "object", "description": "Placeholder - to be populated"},
+      "blood": {"type": "object", "description": "Placeholder - to be populated"},
+      "gastrointestinal": {"type": "object", "description": "Placeholder - to be populated"},
+      "musculoskeletal": {"type": "object", "description": "Placeholder - to be populated"},
+      "genitourinary": {"type": "object", "description": "Placeholder - to be populated"},
+      "other": {"type": "object", "description": "Placeholder - to be populated"}
     }
   },
   
   "notes": {
+    "schema_version_history": "V2.1.0: Added episode timestamps (timestamp_started, timestamp_last_updated). Updated shared_data to match clinical_data_model.json (nested social_history, added allergies, added systems_review placeholder). Episodes with no clinical data are excluded from export.",
     "episode_definition": "An episode represents a distinct symptom presentation. New episode if: (1) symptom type changes, (2) location changes, (3) complete resolution >1 month then recurrence.",
-    "schema_changes_v2": "Removed chief_complaint (redundant with symptom sections), symptom_type (derivable from present symptoms), currently_active and episode-level completely_resolved (replaced with per-symptom resolved fields). Each symptom section now has its own _completely_resolved field.",
+    "operational_fields_excluded": "The following operational fields are tracked internally but excluded from JSON export: questions_answered, follow_up_blocks_activated, follow_up_blocks_completed.",
+    "empty_episode_filtering": "Episodes with only metadata (episode_id, timestamps) and no clinical fields are excluded from export. Episodes with negative findings (e.g., visual_loss_present: false) ARE included as they represent clinical data.",
+    "episode_id_guarantees": "Episode IDs are 1-indexed integers, strictly increasing with no gaps in the exported array. Internal episodes may be sparse but export is always contiguous.",
     "temporal_fields": "Each symptom section has its own temporal fields (first_onset, temporal_pattern, flareup_duration, etc). This allows different symptoms within the same episode to have different temporal patterns.",
     "resolved_fields": "Each symptom that has a _present field also has a _completely_resolved field. This allows tracking resolution status per symptom rather than per episode.",
     "follow_up_blocks": "Triggered based on episode-specific data. Each episode can trigger different blocks.",
-    "field_prefixes": "vl_ = vision loss, h_ = headache, ep_ = eye pain, ac_ = appearance changes, cp_ = color perception, vp_ = visual phenomena, dp_ = diplopia, hc_ = healthcare contacts"
+    "field_prefixes": "vl_ = vision loss, h_ = headache, ep_ = eye pain, ac_ = appearance changes, cp_ = color perception, vp_ = visual phenomena, dp_ = diplopia, hc_ = healthcare contacts, b1-b6 = follow-up blocks",
+    "shared_data_structure": "Social history uses nested structure (e.g., social_history.smoking.status) to prevent field name collisions. Systems review is a placeholder with only general_health populated - other systems to be added in future versions."
   }
 }

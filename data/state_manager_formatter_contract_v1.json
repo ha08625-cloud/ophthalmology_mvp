@@ -1,0 +1,483 @@
+{
+  "contract_version": "1.1.0",
+  "contract_date": "2025-12-08",
+  "description": "Frozen contract defining the data structure passed from State Manager V2 export_for_json() to JSON Formatter V2. This contract is the single source of truth for the formatter input structure.",
+  
+  "contract_parties": {
+    "producer": "StateManagerV2.export_for_json()",
+    "consumer": "JSONFormatterV2 (to be implemented)",
+    "guarantor": "This contract document"
+  },
+  
+  "top_level_structure": {
+    "type": "object",
+    "required_keys": ["episodes", "shared_data"],
+    "structure": {
+      "episodes": {
+        "type": "array",
+        "description": "List of clinical episodes, each with metadata and symptom data",
+        "ordering": "Matches episode_id order (episodes[0].episode_id == 1)",
+        "filtering": "Empty episodes (no clinical fields) are excluded"
+      },
+      "shared_data": {
+        "type": "object",
+        "description": "Data shared across all episodes (PMH, medications, social history, etc.)"
+      }
+    }
+  },
+  
+  "episode_object": {
+    "description": "Each episode in the episodes array",
+    "type": "object",
+    
+    "metadata_fields": {
+      "description": "Fields present in every episode",
+      "fields": {
+        "episode_id": {
+          "type": "integer",
+          "required": true,
+          "constraints": {
+            "minimum": 1,
+            "indexing": "1-indexed (first episode is 1, not 0)",
+            "uniqueness": "Unique within consultation",
+            "ordering": "Strictly increasing in array (no gaps)",
+            "stability": "Never changes once assigned"
+          },
+          "notes": "CRITICAL: episode_id is NOT an array index. Always use episode_id - 1 for array access if needed."
+        },
+        "timestamp_started": {
+          "type": "string",
+          "format": "ISO 8601 UTC",
+          "required": true,
+          "example": "2025-12-08T16:55:32.709134+00:00",
+          "constraints": {
+            "timezone": "Always UTC",
+            "immutable": "Never changes after episode creation"
+          }
+        },
+        "timestamp_last_updated": {
+          "type": "string",
+          "format": "ISO 8601 UTC",
+          "required": true,
+          "example": "2025-12-08T16:55:32.709163+00:00",
+          "constraints": {
+            "timezone": "Always UTC",
+            "updates": "Updated every time a clinical field is set"
+          }
+        }
+      }
+    },
+    
+    "clinical_fields": {
+      "description": "Symptom-specific fields (variable per episode)",
+      "variability": "Each episode may have different clinical fields depending on symptoms present",
+      "field_types": {
+        "boolean": {
+          "description": "True/False values",
+          "examples": ["visual_loss_present", "h_present", "ep_present"]
+        },
+        "categorical": {
+          "description": "String values from predefined set",
+          "examples": ["vl_laterality: 'left'|'right'", "vl_onset_speed: 'acute'|'subacute'|'chronic'"]
+        },
+        "text": {
+          "description": "Free-text strings",
+          "examples": ["vl_field", "h_description", "vl_acuity_description"]
+        },
+        "integer": {
+          "description": "Numeric values",
+          "examples": ["h_severity", "ep_severity"]
+        }
+      },
+      "field_prefixes": {
+        "vl_": "Vision loss",
+        "h_": "Headache",
+        "ep_": "Eye pain",
+        "ac_": "Appearance changes",
+        "cp_": "Color perception",
+        "vp_": "Visual phenomena",
+        "dp_": "Diplopia",
+        "hc_": "Healthcare contacts",
+        "b1_": "Follow-up block 1",
+        "b2_": "Follow-up block 2",
+        "b3_": "Follow-up block 3",
+        "b4_": "Follow-up block 4",
+        "b5_": "Follow-up block 5",
+        "b6_": "Follow-up block 6"
+      },
+      "special_cases": {
+        "description": "Fields without standard prefixes",
+        "fields": [
+          "visual_loss_present",
+          "agnosia_present",
+          "hallucinations_present",
+          "vertigo_present",
+          "nystagmus_present",
+          "dry_gritty_sensation",
+          "appearance_changes_present",
+          "other_symptoms",
+          "functional_impact"
+        ]
+      },
+      "negative_findings": {
+        "description": "Fields with False/null values are clinically meaningful",
+        "examples": {
+          "visual_loss_present": false,
+          "h_present": false
+        },
+        "rule": "Episodes with only negative findings MUST be exported (not filtered as empty)"
+      }
+    },
+    
+    "excluded_fields": {
+      "description": "Operational fields excluded from export_for_json()",
+      "fields": [
+        "questions_answered",
+        "follow_up_blocks_activated",
+        "follow_up_blocks_completed"
+      ],
+      "rationale": "These are internal workflow state, not clinical data",
+      "availability": "Still available via export_for_summary() for summary generator"
+    }
+  },
+  
+  "shared_data_object": {
+    "description": "Data shared across all episodes",
+    "type": "object",
+    
+    "array_fields": {
+      "description": "Arrays that may contain zero or more items",
+      "fields": {
+        "past_medical_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "condition": "string",
+              "diagnosed_when": "string",
+              "current_status": "string"
+            }
+          },
+          "default": "[]"
+        },
+        "medications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "medication_name": "string",
+              "dose": "string",
+              "frequency": "string",
+              "indication": "string (optional)"
+            }
+          },
+          "default": "[]"
+        },
+        "family_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "condition": "string",
+              "relationship": "string"
+            }
+          },
+          "default": "[]"
+        },
+        "allergies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "allergen": "string",
+              "reaction": "string"
+            }
+          },
+          "default": "[]"
+        }
+      }
+    },
+    
+    "nested_objects": {
+      "description": "Objects with nested structure (not flat)",
+      
+      "social_history": {
+        "type": "object",
+        "structure": {
+          "smoking": {
+            "type": "object",
+            "fields": {
+              "status": {
+                "type": "string|null",
+                "valid_values": ["never", "current", "former", null]
+              },
+              "pack_years": {
+                "type": "integer|null"
+              }
+            }
+          },
+          "alcohol": {
+            "type": "object",
+            "fields": {
+              "units_per_week": "integer|null",
+              "type": "string|null"
+            }
+          },
+          "illicit_drugs": {
+            "type": "object",
+            "fields": {
+              "status": {
+                "type": "string|null",
+                "valid_values": ["never", "current", "former", null]
+              },
+              "type": "string|null",
+              "frequency": "string|null"
+            }
+          },
+          "occupation": {
+            "type": "object",
+            "fields": {
+              "current": "string|null",
+              "past": "string|null"
+            }
+          }
+        },
+        "access_pattern": "Use dot notation: shared_data['social_history']['smoking']['status']",
+        "setting_pattern": "state.set_shared_field('social_history.smoking.status', 'former')"
+      },
+      
+      "systems_review": {
+        "type": "object",
+        "structure": {
+          "general_health": {
+            "type": "object",
+            "fields": {
+              "chills": "boolean|null",
+              "chills_details": "string|null",
+              "fevers": "boolean|null",
+              "fever_details": "string|null",
+              "night_sweats": "boolean|null",
+              "night_sweats_details": "string|null",
+              "fatigue": "boolean|null",
+              "fatigue_details": "string|null",
+              "appetite_or_weight_change": "boolean|null",
+              "appetite_weight_details": "string|null",
+              "lumps": "boolean|null",
+              "lumps_details": "string|null",
+              "unwell": "boolean|null",
+              "unwell_details": "string|null"
+            }
+          },
+          "neurological": {"type": "object", "status": "placeholder"},
+          "ear_nose_throat": {"type": "object", "status": "placeholder"},
+          "skin": {"type": "object", "status": "placeholder"},
+          "respiratory": {"type": "object", "status": "placeholder"},
+          "cardiovascular": {"type": "object", "status": "placeholder"},
+          "blood": {"type": "object", "status": "placeholder"},
+          "gastrointestinal": {"type": "object", "status": "placeholder"},
+          "musculoskeletal": {"type": "object", "status": "placeholder"},
+          "genitourinary": {"type": "object", "status": "placeholder"},
+          "other": {"type": "object", "status": "placeholder"}
+        },
+        "note": "Only general_health is currently populated. Other systems are empty objects ({}) as placeholders."
+      }
+    }
+  },
+  
+  "guarantees": {
+    "description": "Invariants that State Manager V2 guarantees",
+    
+    "structural_guarantees": {
+      "top_level_keys": "Always present: 'episodes', 'shared_data'",
+      "episodes_type": "Always list (never null, never dict)",
+      "shared_data_type": "Always dict (never null, never list)",
+      "episode_metadata": "Every episode has episode_id, timestamp_started, timestamp_last_updated"
+    },
+    
+    "ordering_guarantees": {
+      "episode_array_order": "episodes[i].episode_id < episodes[i+1].episode_id (strictly increasing)",
+      "episode_id_start": "First episode has episode_id == 1",
+      "no_gaps": "Exported episode IDs are contiguous (1, 2, 3, ...) with no gaps",
+      "note": "State Manager filters empty episodes before export, ensuring contiguous IDs. Formatter receives and preserves this contiguous ordering.",
+      "formatter_role": "Formatter does NOT renumber IDs - it trusts State Manager's export to be contiguous"
+    },
+    
+    "filtering_guarantees": {
+      "empty_episodes": "Episodes with ONLY metadata (no clinical fields) are excluded",
+      "negative_findings": "Episodes with clinical fields set to False/null ARE included",
+      "operational_fields": "Always excluded from export_for_json()"
+    },
+    
+    "type_guarantees": {
+      "episode_id": "Always integer >= 1",
+      "timestamps": "Always string in ISO 8601 UTC format",
+      "arrays": "Always list (may be empty [])",
+      "nested_objects": "Always dict (may have null values)"
+    },
+    
+    "null_handling": {
+      "description": "How null values appear",
+      "rule": "Fields that haven't been set remain null in nested objects",
+      "examples": {
+        "social_history.smoking.pack_years": "null if never set",
+        "systems_review.general_health.chills": "null if never asked"
+      },
+      "arrays": "Empty arrays [] (not null) if no items added"
+    }
+  },
+  
+  "anti_guarantees": {
+    "description": "Things State Manager V2 does NOT guarantee (formatter must handle)",
+    
+    "no_guarantee_on": {
+      "field_presence": "Clinical fields are dynamic - formatter cannot assume any specific field exists except metadata",
+      "field_order": "Dict key order within episodes is not guaranteed (Python 3.7+ preserves insertion order but don't rely on it)",
+      "value_validation": "State Manager does not validate that categorical values match schema valid_values",
+      "completeness": "State Manager does not track whether consultation is 'complete'"
+    },
+    
+    "formatter_responsibilities": {
+      "structural_validation": "Formatter validates required structure exists (episodes array, shared_data object)",
+      "type_validation": "Formatter validates episode_id is integer, timestamps are strings if present",
+      "unexpected_field_logging": "Formatter logs warnings for unexpected fields but accepts them (permissive)",
+      "graceful_handling": "Formatter handles missing optional fields gracefully, raises clear errors for missing required fields",
+      "serialization_only": "Formatter is a pure serialization layer - no completeness calculation, no field mapping, no business logic"
+    }
+  },
+  
+  "versioning": {
+    "contract_version": "1.1.0",
+    "state_manager_version": "2.0.0 (with export_for_json() updates)",
+    "json_schema_version": "2.1.0-multi-episode",
+    "formatter_version": "2.0.0 (implemented)",
+    "breaking_changes_trigger_new_contract": true,
+    "examples_of_breaking_changes": [
+      "Changing episode_id from 1-indexed to 0-indexed",
+      "Making episodes a dict instead of array",
+      "Removing timestamp fields",
+      "Changing nested structure to flat structure"
+    ],
+    "non_breaking_changes": [
+      "Adding new clinical fields (formatter ignores unknown fields)",
+      "Adding new shared_data arrays (formatter handles gracefully)",
+      "Expanding systems_review sections (formatter passes through)",
+      "Updating formatter responsibility descriptions (contract v1.0.0 -> v1.1.0)"
+    ]
+  },
+  
+  "testing_contract_compliance": {
+    "description": "How to verify contract compliance",
+    
+    "producer_tests": {
+      "file": "test_state_manager_v2_updates.py",
+      "purpose": "Verify State Manager V2 produces correct structure",
+      "key_checks": [
+        "Timestamps present and valid ISO 8601",
+        "Operational fields excluded",
+        "Empty episodes filtered",
+        "Negative findings preserved"
+      ]
+    },
+    
+    "consumer_tests": {
+      "file": "test_json_formatter_v2_input.py (to be created)",
+      "purpose": "Verify JSON Formatter V2 handles contract structure",
+      "key_checks": [
+        "Parses episodes array correctly",
+        "Handles episode_id as 1-indexed",
+        "Processes nested shared_data",
+        "Handles missing clinical fields gracefully",
+        "Handles null values in nested objects"
+      ]
+    },
+    
+    "integration_tests": {
+      "file": "test_schema_match.py",
+      "purpose": "Verify State Manager output matches JSON schema",
+      "status": "Passing"
+    }
+  },
+  
+  "example_minimal_export": {
+    "description": "Smallest valid export (one episode, one clinical field)",
+    "example": {
+      "episodes": [
+        {
+          "episode_id": 1,
+          "timestamp_started": "2025-12-08T16:55:32.709134+00:00",
+          "timestamp_last_updated": "2025-12-08T16:55:32.709163+00:00",
+          "visual_loss_present": false
+        }
+      ],
+      "shared_data": {
+        "past_medical_history": [],
+        "medications": [],
+        "family_history": [],
+        "allergies": [],
+        "social_history": {
+          "smoking": {
+            "status": null,
+            "pack_years": null
+          },
+          "alcohol": {
+            "units_per_week": null,
+            "type": null
+          },
+          "illicit_drugs": {
+            "status": null,
+            "type": null,
+            "frequency": null
+          },
+          "occupation": {
+            "current": null,
+            "past": null
+          }
+        },
+        "systems_review": {
+          "general_health": {
+            "chills": null,
+            "chills_details": null,
+            "fevers": null,
+            "fever_details": null,
+            "night_sweats": null,
+            "night_sweats_details": null,
+            "fatigue": null,
+            "fatigue_details": null,
+            "appetite_or_weight_change": null,
+            "appetite_weight_details": null,
+            "lumps": null,
+            "lumps_details": null,
+            "unwell": null,
+            "unwell_details": null
+          },
+          "neurological": {},
+          "ear_nose_throat": {},
+          "skin": {},
+          "respiratory": {},
+          "cardiovascular": {},
+          "blood": {},
+          "gastrointestinal": {},
+          "musculoskeletal": {},
+          "genitourinary": {},
+          "other": {}
+        }
+      }
+    }
+  },
+  
+  "change_log": {
+    "1.0.0": {
+      "date": "2025-12-08",
+      "changes": "Initial contract freeze",
+      "state_manager_version": "2.0.0",
+      "json_schema_version": "2.1.0-multi-episode"
+    },
+    "1.1.0": {
+      "date": "2025-12-08",
+      "changes": "Updated formatter responsibilities to reflect implemented design: removed completeness calculation and field mapping (pure serialization layer). Clarified episode ID contiguity is State Manager's responsibility.",
+      "state_manager_version": "2.0.0",
+      "json_schema_version": "2.1.0-multi-episode",
+      "formatter_version": "2.0.0 (implemented)"
+    }
+  }
+}

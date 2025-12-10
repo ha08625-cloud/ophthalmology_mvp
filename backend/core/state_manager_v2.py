@@ -17,18 +17,35 @@ API Philosophy:
 - State Manager = dumb data container
 - Dialogue Manager = smart coordinator (tracks current episode)
 - Question Selector = medical protocol logic
+
+CRITICAL: Episode ID vs Array Index
+- Episode IDs are 1-indexed (user-facing identifiers): 1, 2, 3, ...
+- Python lists are 0-indexed (storage): episodes[0], episodes[1], episodes[2], ...
+- Always use clear naming to prevent off-by-one errors:
+    episode_id = 2          # User-facing ID (1-indexed)
+    index = episode_id - 1  # Storage index (0-indexed)
+    episode = self.episodes[index]
+- NEVER assume episode_id == list index
 """
 
 import logging
 from typing import List, Dict, Any, Optional
 import json
 from pathlib import Path
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 
 class StateManagerV2:
     """Manages multi-episode consultation state"""
+    
+    # Operational fields excluded from clinical JSON export
+    OPERATIONAL_FIELDS = {
+        'questions_answered',
+        'follow_up_blocks_activated',
+        'follow_up_blocks_completed'
+    }
     
     def __init__(self, data_model_path="data/clinical_data_model.json"):
         """
@@ -71,12 +88,12 @@ class StateManagerV2:
             # episode_id = 1
         """
         episode_id = len(self.episodes) + 1
+        current_time = datetime.now(timezone.utc).isoformat()
         
         episode = {
             'episode_id': episode_id,
-            'symptom_type': symptom_type,
-            'currently_active': True,  # Default to active
-            'completely_resolved': False,  # Default to unresolved
+            'timestamp_started': current_time,
+            'timestamp_last_updated': current_time,
             'questions_answered': set(),  # Question Selector V2 prerequisite
             'follow_up_blocks_activated': set(),  # Question Selector V2 prerequisite
             'follow_up_blocks_completed': set(),  # Question Selector V2 prerequisite
@@ -109,8 +126,10 @@ class StateManagerV2:
             raise ValueError(f"Episode {episode_id} does not exist (valid range: 1-{len(self.episodes)})")
         
         # Episodes are 1-indexed, list is 0-indexed
-        episode = self.episodes[episode_id - 1]
+        index = episode_id - 1  # Convert to array index
+        episode = self.episodes[index]
         episode[field_name] = value
+        episode['timestamp_last_updated'] = datetime.now(timezone.utc).isoformat()
         
         logger.debug(f"Episode {episode_id}: {field_name} = {value}")
     
@@ -313,27 +332,31 @@ class StateManagerV2:
     
     def set_shared_field(self, field_name: str, value: Any) -> None:
         """
-        Set a shared data field
+        Set a shared data field (supports nested paths with dot notation)
         
         Args:
-            field_name: Field to set
+            field_name: Field to set (supports dot notation for nesting)
             value: Value to set
             
         Example:
-            state.set_shared_field('smoking_status', 'never')
+            state.set_shared_field('social_history.smoking.status', 'former')
+            state.set_shared_field('social_history.smoking.pack_years', 10)
             state.set_shared_field('occupation', 'teacher')
         """
-        # Handle nested paths (e.g., 'social_history.smoking_status')
+        # Handle nested paths (e.g., 'social_history.smoking.status')
         if '.' in field_name:
             parts = field_name.split('.')
-            container = parts[0]
-            subfield = parts[1]
             
-            if container not in self.shared_data:
-                self.shared_data[container] = {}
+            # Navigate to the parent container
+            container = self.shared_data
+            for part in parts[:-1]:
+                if part not in container:
+                    container[part] = {}
+                container = container[part]
             
-            self.shared_data[container][subfield] = value
-            logger.debug(f"Shared data: {container}.{subfield} = {value}")
+            # Set the final value
+            container[parts[-1]] = value
+            logger.debug(f"Shared data: {field_name} = {value}")
         else:
             self.shared_data[field_name] = value
             logger.debug(f"Shared data: {field_name} = {value}")
@@ -373,28 +396,32 @@ class StateManagerV2:
     
     def get_shared_field(self, field_name: str, default: Any = None) -> Any:
         """
-        Get a specific shared data field
+        Get a specific shared data field (supports nested paths with dot notation)
         
         Args:
-            field_name: Field to retrieve
+            field_name: Field to retrieve (supports dot notation for nesting)
             default: Return value if field doesn't exist
             
         Returns:
             Field value or default
+            
+        Example:
+            status = state.get_shared_field('social_history.smoking.status')
+            pack_years = state.get_shared_field('social_history.smoking.pack_years', 0)
         """
         # Handle nested paths
         if '.' in field_name:
             parts = field_name.split('.')
-            container = parts[0]
-            subfield = parts[1]
             
-            if container not in self.shared_data:
-                return default
+            # Navigate through the nested structure
+            container = self.shared_data
+            for part in parts[:-1]:
+                if part not in container or not isinstance(container[part], dict):
+                    return default
+                container = container[part]
             
-            if not isinstance(self.shared_data[container], dict):
-                return default
-            
-            return self.shared_data[container].get(subfield, default)
+            # Get the final value
+            return container.get(parts[-1], default)
         
         return self.shared_data.get(field_name, default)
     
@@ -469,7 +496,7 @@ class StateManagerV2:
     
     def export_for_json(self) -> Dict[str, Any]:
         """
-        Export complete state for JSON formatter
+        Export complete state for JSON formatter (clinical data only)
         
         Returns:
             dict: {
@@ -479,21 +506,36 @@ class StateManagerV2:
             
         Note: 
             - Does NOT include current_episode_id (UI state)
+            - Excludes operational fields (questions_answered, follow_up_blocks_*)
+            - Excludes empty episodes (no clinical fields set)
             - Converts sets to sorted lists for JSON serialization
         """
-        # Convert episode sets to lists for JSON serialization
+        # Convert episode sets to lists and filter operational fields
         serializable_episodes = []
         for ep in self.episodes:
             ep_copy = {}
             for key, value in ep.items():
+                # Skip operational fields
+                if key in self.OPERATIONAL_FIELDS:
+                    continue
+                    
                 if isinstance(value, set):
                     ep_copy[key] = sorted(list(value))
                 else:
                     ep_copy[key] = value
             serializable_episodes.append(ep_copy)
         
+        # Filter empty episodes (only have metadata, no clinical fields)
+        metadata_fields = {'episode_id', 'timestamp_started', 'timestamp_last_updated'}
+        non_empty_episodes = []
+        for ep in serializable_episodes:
+            # Check if has any fields beyond metadata
+            clinical_fields = set(ep.keys()) - metadata_fields
+            if clinical_fields:  # Has at least one clinical field
+                non_empty_episodes.append(ep)
+        
         return {
-            'episodes': serializable_episodes,
+            'episodes': non_empty_episodes,
             'shared_data': self.shared_data.copy()
         }
     
