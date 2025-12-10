@@ -19,28 +19,24 @@ from typing import Set, Literal
 
 VISION_LOSS_FIELDS = {
     'visual_loss_present',
-    'vl_completely_resolved',
-    'vl_first_onset',
-    'vl_current_onset',
-    'vl_temporal_pattern',
-    'vl_flareup_usual_duration',
-    'vl_inter_flareup_interval',
-    'vl_complete_resolution',
-    'vl_baseline_severity',
-    'vl_worst_severity',
-    'vl_current_severity',
-    'vl_description',
+    'vl_single_eye',
     'vl_laterality',
     'vl_onset_simultaneity',
     'vl_field',
     'vl_degree',
     'vl_acuity_description',
+    'vl_first_onset',
     'vl_onset_speed',
+    'vl_temporal_pattern',
+    'vl_flareup_usual_duration',
+    'vl_flareup_frequency',
+    'vl_interval_visual_loss',
+    'vl_interval_acuity',
     'vl_worsening',
     'vl_worsening_after_2_weeks',
     'vl_improved',
+    'vl_completely_resolved',
     'vl_blackouts',
-    'vl_other_eye_affected',
     'agnosia_present',
     'agnosia_description'
 }
@@ -86,32 +82,35 @@ VISUAL_DISTURBANCES_FIELDS = {
 
 HEADACHE_FIELDS = {
     'h_present',
-    'h_completely_resolved',
+    'h_description',
     'h_first_onset',
-    'h_current_onset',
     'h_temporal_pattern',
     'h_flareup_usual_duration',
-    'h_inter_flareup_interval',
-    'h_complete_resolution',
-    'h_baseline_severity',
+    'h_flareup_frequency',
+    'h_interval_severity',
     'h_worst_severity',
-    'h_current_severity',
-    'h_description',
     'h_location',
     'h_worse_on_straining',
-    'h_time_of_day'
+    'h_time_of_day',
+    'h_completely_resolved'
 }
 
-EYE_PAIN_AND_CHANGES_FIELDS = {
+EYE_PAIN_FIELDS = {
     'ep_present',
-    'ep_completely_resolved',
+    'ep_description',
     'ep_first_onset',
     'ep_temporal_pattern',
-    'ep_onset',
+    'ep_single_eye',
+    'ep_laterality',
+    'ep_onset_simultaneity',
     'ep_severity',
     'ep_worse_on_eye_movements',
-    'dry_gritty_sensation',
-    'appearance_changes_present',
+    'ep_completely_resolved',
+    'dry_gritty_sensation'
+}
+
+APPEARANCE_CHANGES_FIELDS = {
+    'ac_present',
     'ac_redness',
     'ac_discharge',
     'ac_proptosis',
@@ -136,44 +135,43 @@ FUNCTIONAL_IMPACT_FIELDS = {
 # Follow-up blocks (triggered based on episode-specific data)
 # These are episode-specific, not shared
 FOLLOW_UP_BLOCK_1_FIELDS = {
-    'previous_visual_loss_episodes',
-    'uhthoff_phenomenon',
-    'pulfrich_phenomenon'
+    'b1_uhthoff_phenomenon',
+    'b1_pulfrich_phenomenon'
 }
 
 FOLLOW_UP_BLOCK_2_FIELDS = {
-    'scalp_tenderness',
-    'jaw_claudication',
-    'shoulder_girdle_pain'
+    'b2_scalp_tenderness',
+    'b2_jaw_claudication',
+    'b2_shoulder_girdle_pain'
 }
 
 FOLLOW_UP_BLOCK_3_FIELDS = {
-    'acromegalic_features',
-    'nipple_discharge',
-    'menstrual_changes',
-    'erectile_dysfunction',
-    'breast_growth',
-    'temperature_intolerance'
+    'b3_acromegalic_features',
+    'b3_nipple_discharge',
+    'b3_menstrual_changes',
+    'b3_erectile_dysfunction',
+    'b3_breast_growth',
+    'b3_temperature_intolerance'
 }
 
 FOLLOW_UP_BLOCK_4_FIELDS = {
-    'nutritional_factors',
-    'toxic_medications'
+    'b4_nutritional_factors',
+    'b4_toxic_medications'
 }
 
 FOLLOW_UP_BLOCK_5_FIELDS = {
-    'cat_exposure'
+    'b5_cat_exposure'
 }
 
 FOLLOW_UP_BLOCK_6_FIELDS = {
-    'difficulty_reading',
-    'can_read_by_spelling',
-    'difficulty_recognising_people',
-    'can_recognise_people_by_voice',
-    'trouble_navigating',
-    'can_see_whole_picture',
-    'can_see_moving_water',
-    'can_see_car_movement'
+    'b6_difficulty_reading',
+    'b6_can_read_by_spelling',
+    'b6_difficulty_recognising_people',
+    'b6_can_recognise_people_by_voice',
+    'b6_trouble_navigating',
+    'b6_can_see_whole_picture',
+    'b6_can_see_moving_water',
+    'b6_can_see_car_movement'
 }
 
 # Combine all episode-specific fields
@@ -181,7 +179,8 @@ EPISODE_FIELDS = (
     VISION_LOSS_FIELDS |
     VISUAL_DISTURBANCES_FIELDS |
     HEADACHE_FIELDS |
-    EYE_PAIN_AND_CHANGES_FIELDS |
+    EYE_PAIN_FIELDS |
+    APPEARANCE_CHANGES_FIELDS |
     HEALTHCARE_CONTACTS_FIELDS |
     OTHER_SYMPTOMS_FIELDS |
     FUNCTIONAL_IMPACT_FIELDS |
