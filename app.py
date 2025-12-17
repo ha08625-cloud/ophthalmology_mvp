@@ -13,7 +13,7 @@ from datetime import datetime
 from backend.core.state_manager import StateManager
 from backend.core.question_selector import QuestionSelector
 from backend.core.response_parser import ResponseParser
-from backend.core.json_formatter import JSONFormatter
+from ophthalmology_mvp.archive.json_formatter import JSONFormatter
 from backend.core.summary_generator import SummaryGenerator
 from backend.core.dialogue_manager import DialogueManager
 from backend.utils.hf_client import HuggingFaceClient

@@ -1,0 +1,409 @@
+{
+  "contract_version": "1.0.0",
+  "contract_date": "2025-12-16",
+  "description": "Contract defining ResponseParser.parse() return structure",
+  "parties": {
+    "producer": "ResponseParser.parse()",
+    "consumers": [
+      "DialogueManagerV2"
+    ],
+    "guarantor": "This contract document"
+  },
+  "return_structure": {
+    "type": "object",
+    "required_keys": [
+      "outcome",
+      "fields",
+      "metadata"
+    ],
+    "outcome": {
+      "type": "string",
+      "description": "Semantic result of parsing attempt - encodes control flow, not forensic detail",
+      "valid_values": [
+        "success",
+        "partial_success",
+        "unclear",
+        "extraction_failed",
+        "generation_failed"
+      ],
+      "definitions": {
+        "success": "Extracted expected field(s) without detected validation errors. Unexpected fields may also be present.",
+        "partial_success": "Extracted unexpected fields only - expected field absent",
+        "unclear": "Patient explicitly stated uncertainty using recognized unclear patterns (e.g., 'I don't know', 'I'm not sure')",
+        "extraction_failed": "LLM returned empty dict OR invalid JSON - could not extract any fields",
+        "generation_failed": "LLM call crashed (CUDA OOM, timeout, exception) - generation layer failure"
+      }
+    },
+    "fields": {
+      "type": "object",
+      "description": "Extracted field-value pairs",
+      "structure": {
+        "field_name": "field_value (any type)"
+      },
+      "guarantees": [
+        "Empty dict {} if no fields extracted",
+        "May contain fields not in episode_classifier.py (logged as unexpected_fields)",
+        "Field routing validated by episode_classifier at DialogueManager layer, not here",
+        "Values are LLM-returned with normalization applied per value_normalization policy"
+      ]
+    },
+    "parse_metadata": {
+      "type": "object",
+      "required_keys": [
+        "expected_field",
+        "question_id",
+        "timestamp"
+      ],
+      "optional_keys": [
+        "raw_llm_output",
+        "error_message",
+        "error_type",
+        "unexpected_fields",
+        "validation_warnings",
+        "normalization_applied"
+      ],
+      "field_definitions": {
+        "expected_field": {
+          "type": "string",
+          "description": "The primary field this question was asking for",
+          "required": true
+        },
+        "question_id": {
+          "type": "string",
+          "description": "Question identifier from ruleset",
+          "required": true
+        },
+        "turn_id": {
+          "type": "string|null",
+          "description": "Dialogue turn identifier (e.g., 'turn_05') for provenance tracking. Null if not provided by caller.",
+          "required": true
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "ISO 8601 UTC",
+          "description": "When parse() was called",
+          "required": true
+        },
+        "raw_llm_output": {
+          "type": "string|null",
+          "description": "Raw LLM response before parsing (for debugging). Null if generation_failed or unclear (no LLM call made)."
+        },
+        "error_message": {
+          "type": "string|null",
+          "description": "Human-readable error description if outcome is extraction_failed or generation_failed. Null otherwise."
+        },
+        "error_type": {
+          "type": "string|null",
+          "description": "Exception class name if generation_failed (e.g., 'RuntimeError', 'TimeoutError'). Null otherwise.",
+          "examples": [
+            "JSONDecodeError",
+            "RuntimeError",
+            "TimeoutError"
+          ]
+        },
+        "unexpected_fields": {
+          "type": "array",
+          "description": "Field names extracted but not expected from this question. Empty array if none.",
+          "example": [
+            "ac_redness"
+          ]
+        },
+        "validation_warnings": {
+          "type": "array",
+          "description": "Warnings about extracted values (e.g., not in valid_values, invalid boolean). Empty array if none.",
+          "structure": [
+            {
+              "field": "vl_laterality",
+              "value": "right eye",
+              "issue": "not_in_valid_values",
+              "expected": [
+                "left",
+                "right"
+              ]
+            }
+          ],
+          "valid_issues": [
+            "not_in_valid_values",
+            "invalid_boolean"
+          ]
+        },
+        "normalization_applied": {
+          "type": "array",
+          "description": "Records of value normalization for auditability. Empty array if none.",
+          "structure": [
+            {
+              "field": "ep_present",
+              "original_value": "Yes",
+              "normalized_value": true,
+              "normalization_type": "boolean"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "value_normalization": {
+    "description": "Normalization policy - which field types are normalized and how",
+    "boolean_fields": {
+      "policy": "Strings representing booleans are normalized to Python bool",
+      "recognized_true": [
+        "true",
+        "yes",
+        "y",
+        "1",
+        "t"
+      ],
+      "recognized_false": [
+        "false",
+        "no",
+        "n",
+        "0",
+        "f"
+      ],
+      "case_insensitive": true,
+      "auditability": "Original value preserved in metadata.normalization_applied if normalization occurs"
+    },
+    "categorical_fields": {
+      "policy": "Not normalized - LLM must return exact valid_values",
+      "rationale": "Categorical normalization is semantic, not syntactic - belongs in deterministic layers"
+    },
+    "text_fields": {
+      "policy": "Not normalized - returned as-is"
+    },
+    "integer_fields": {
+      "policy": "Not normalized - returned as-is",
+      "rationale": "Integer normalization is a trap (ranges, units, strings-as-numbers)"
+    }
+  },
+  "outcome_guarantees": {
+    "success": {
+      "fields": "Contains expected_field with non-null value. May also contain unexpected_fields.",
+      "metadata.error_message": "null",
+      "metadata.error_type": "null",
+      "metadata.unexpected_fields": "May be non-empty if additional fields extracted",
+      "metadata.validation_warnings": "May be non-empty if value issues detected"
+    },
+    "partial_success": {
+      "fields": "Contains at least one field, but NOT expected_field",
+      "metadata.unexpected_fields": "Non-empty list",
+      "metadata.error_message": "null",
+      "metadata.error_type": "null"
+    },
+    "unclear": {
+      "fields": "Empty dict {}",
+      "metadata.error_message": "null (this is not an error)",
+      "metadata.error_type": "null",
+      "metadata.raw_llm_output": "null (no LLM call made - early return)"
+    },
+    "extraction_failed": {
+      "fields": "Empty dict {}",
+      "metadata.error_message": "Describes why extraction failed (e.g., 'LLM returned empty extraction', 'Invalid JSON')",
+      "metadata.error_type": "May be 'JSONDecodeError' if JSON parse failed, null if empty dict",
+      "metadata.raw_llm_output": "Present for debugging"
+    },
+    "generation_failed": {
+      "fields": "Empty dict {}",
+      "metadata.error_message": "Describes what went wrong (e.g., 'CUDA out of memory', 'Generation timeout')",
+      "metadata.error_type": "Exception class name (e.g., 'RuntimeError', 'TimeoutError')",
+      "metadata.raw_llm_output": "null (generation never completed)"
+    }
+  },
+  "examples": {
+    "success_example": {
+      "outcome": "success",
+      "fields": {
+        "vl_laterality": "right"
+      },
+      "parse_metadata": {
+        "expected_field": "vl_laterality",
+        "question_id": "vl_3",
+        "turn_id": "turn_05",
+        "timestamp": "2025-12-16T10:30:45.123Z",
+        "raw_llm_output": "{\"vl_laterality\": \"right\"}",
+        "error_message": null,
+        "error_type": null,
+        "unexpected_fields": [],
+        "validation_warnings": [],
+        "normalization_applied": []
+      }
+    },
+    "success_with_unexpected_example": {
+      "outcome": "success",
+      "fields": {
+        "vl_laterality": "right",
+        "ac_redness": true
+      },
+      "parse_metadata": {
+        "expected_field": "vl_laterality",
+        "question_id": "vl_3",
+        "turn_id": "turn_05",
+        "timestamp": "2025-12-16T10:30:45.123Z",
+        "raw_llm_output": "{\"vl_laterality\": \"right\", \"ac_redness\": true}",
+        "error_message": null,
+        "error_type": null,
+        "unexpected_fields": [
+          "ac_redness"
+        ],
+        "validation_warnings": [],
+        "normalization_applied": []
+      }
+    },
+    "success_with_validation_warning_example": {
+      "outcome": "success",
+      "fields": {
+        "vl_laterality": "right eye"
+      },
+      "parse_metadata": {
+        "expected_field": "vl_laterality",
+        "question_id": "vl_3",
+        "turn_id": "turn_05",
+        "timestamp": "2025-12-16T10:30:45.123Z",
+        "raw_llm_output": "{\"vl_laterality\": \"right eye\"}",
+        "error_message": null,
+        "error_type": null,
+        "unexpected_fields": [],
+        "validation_warnings": [
+          {
+            "field": "vl_laterality",
+            "value": "right eye",
+            "issue": "not_in_valid_values",
+            "expected": [
+              "left",
+              "right"
+            ]
+          }
+        ],
+        "normalization_applied": []
+      }
+    },
+    "success_with_normalization_example": {
+      "outcome": "success",
+      "fields": {
+        "ep_present": true
+      },
+      "parse_metadata": {
+        "expected_field": "ep_present",
+        "question_id": "ep_1",
+        "turn_id": "turn_08",
+        "timestamp": "2025-12-16T10:30:45.123Z",
+        "raw_llm_output": "{\"ep_present\": \"Yes\"}",
+        "error_message": null,
+        "error_type": null,
+        "unexpected_fields": [],
+        "validation_warnings": [],
+        "normalization_applied": [
+          {
+            "field": "ep_present",
+            "original_value": "Yes",
+            "normalized_value": true,
+            "normalization_type": "boolean"
+          }
+        ]
+      }
+    },
+    "partial_success_example": {
+      "outcome": "partial_success",
+      "fields": {
+        "ac_redness": true
+      },
+      "parse_metadata": {
+        "expected_field": "vl_laterality",
+        "question_id": "vl_3",
+        "turn_id": "turn_05",
+        "timestamp": "2025-12-16T10:30:45.123Z",
+        "raw_llm_output": "{\"ac_redness\": true}",
+        "error_message": null,
+        "error_type": null,
+        "unexpected_fields": [
+          "ac_redness"
+        ],
+        "validation_warnings": [],
+        "normalization_applied": []
+      }
+    },
+    "unclear_example": {
+      "outcome": "unclear",
+      "fields": {},
+      "parse_metadata": {
+        "expected_field": "vl_laterality",
+        "question_id": "vl_3",
+        "turn_id": "turn_05",
+        "timestamp": "2025-12-16T10:30:45.123Z",
+        "raw_llm_output": null,
+        "error_message": null,
+        "error_type": null,
+        "unexpected_fields": [],
+        "validation_warnings": [],
+        "normalization_applied": []
+      }
+    },
+    "extraction_failed_invalid_json_example": {
+      "outcome": "extraction_failed",
+      "fields": {},
+      "parse_metadata": {
+        "expected_field": "vl_laterality",
+        "question_id": "vl_3",
+        "turn_id": "turn_05",
+        "timestamp": "2025-12-16T10:30:45.123Z",
+        "raw_llm_output": "{invalid json",
+        "error_message": "Invalid JSON: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+        "error_type": "JSONDecodeError",
+        "unexpected_fields": [],
+        "validation_warnings": [],
+        "normalization_applied": []
+      }
+    },
+    "extraction_failed_empty_dict_example": {
+      "outcome": "extraction_failed",
+      "fields": {},
+      "parse_metadata": {
+        "expected_field": "vl_laterality",
+        "question_id": "vl_3",
+        "turn_id": "turn_05",
+        "timestamp": "2025-12-16T10:30:45.123Z",
+        "raw_llm_output": "{}",
+        "error_message": "LLM returned empty extraction",
+        "error_type": null,
+        "unexpected_fields": [],
+        "validation_warnings": [],
+        "normalization_applied": []
+      }
+    },
+    "generation_failed_example": {
+      "outcome": "generation_failed",
+      "fields": {},
+      "parse_metadata": {
+        "expected_field": "vl_laterality",
+        "question_id": "vl_3",
+        "turn_id": "turn_05",
+        "timestamp": "2025-12-16T10:30:45.123Z",
+        "raw_llm_output": null,
+        "error_message": "CUDA out of memory",
+        "error_type": "RuntimeError",
+        "unexpected_fields": [],
+        "validation_warnings": [],
+        "normalization_applied": []
+      }
+    }
+  },
+  "versioning": {
+    "breaking_changes": [
+      "Changing return dict top-level keys",
+      "Removing outcome values",
+      "Making optional metadata fields required",
+      "Changing outcome semantics"
+    ],
+    "non_breaking_changes": [
+      "Adding new outcome values",
+      "Adding new optional metadata fields",
+      "Adding new examples",
+      "Expanding normalization_applied structure"
+    ]
+  },
+  "notes": {
+    "state_encoding": "Outcome states encode control flow, not forensic detail. EXTRACTION_FAILED subsumes both empty dict and invalid JSON because DialogueManager behavior is identical for both.",
+    "field_routing": "ResponseParser does not validate field names against episode_classifier.py. That responsibility belongs to DialogueManager.",
+    "normalization_auditability": "Boolean normalization is lossless and auditable via metadata.normalization_applied. Original values are preserved.",
+    "validation_vs_extraction": "validation_warnings indicates value issues (e.g., not in valid_values) but does NOT change outcome from SUCCESS. Field presence and value correctness are orthogonal."
+  }
+}

@@ -276,3 +276,27 @@ class JSONFormatterV2:
         logger.info(f"JSON saved to {abs_path}")
         
         return abs_path
+    
+    def format_and_save(self, state_data: dict, consultation_id: str, output_path: str) -> str:
+        """
+        Format state and save to file (combined operation)
+        
+        This method owns the complete persistence lifecycle for DialogueManager.
+        
+        Args:
+            state_data: Output from state.export_for_json()
+            consultation_id: Unique consultation ID
+            output_path: Path to save file
+            
+        Returns:
+            str: Absolute path to saved file
+            
+        Raises:
+            ValueError: If state_data invalid
+            OSError: If file cannot be written
+        """
+        # Format
+        json_data = self.format_state(state_data, consultation_id)
+        
+        # Save
+        return self.save_to_file(json_data, output_path)

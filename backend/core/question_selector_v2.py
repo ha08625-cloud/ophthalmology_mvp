@@ -12,6 +12,31 @@ Design principles:
 - Deterministic: Same input always produces same output
 - Pure functions: No side effects
 - Fail fast: Validate ruleset on initialization
+- Immutable: Ruleset frozen at load, returns are copies
+
+Contracts:
+- episode_data must contain:
+    - questions_answered: set[str]
+    - follow_up_blocks_activated: set[str]
+    - follow_up_blocks_completed: set[str]
+    - Extracted fields as key-value pairs
+- Returns are always copies (safe to mutate)
+- Caller is responsible for trigger idempotency (check_triggers returns
+  ALL matching blocks, not just new ones)
+
+DSL Semantics:
+- Missing field always evaluates to False for all operators
+- Empty "all": True (vacuous truth)
+- Empty "any": False (no conditions met)
+- Empty DSL root: True (no constraints)
+- Unknown operator: raises ValueError (fail fast)
+
+Supported DSL operators:
+- Logical: all, any
+- Comparison: eq, ne, gt, gte, lt, lte
+- Boolean: is_true, is_false
+- Existence: exists
+- String: contains_lower
 
 Provenance hooks:
 - _evaluate_condition() and _evaluate_dsl() can be wrapped later
@@ -19,10 +44,11 @@ Provenance hooks:
 - is_block_complete() can be extended to return skip reasons
 """
 
+import copy
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +59,24 @@ class QuestionSelectorV2:
     
     Determines the next question based on episode state and medical protocol.
     Does not track any state internally - all state comes from episode_data.
+    
+    Thread Safety:
+        Ruleset is deep-copied and frozen at initialization.
+        All public methods return copies, never internal references.
     """
+    
+    # Required keys in episode_data
+    REQUIRED_EPISODE_KEYS = {
+        'questions_answered',
+        'follow_up_blocks_activated', 
+        'follow_up_blocks_completed'
+    }
+    
+    # Valid question type values
+    VALID_QUESTION_TYPES = {'probe', 'conditional'}
+    
+    # Required fields in question dicts
+    REQUIRED_QUESTION_FIELDS = {'id', 'question', 'field'}
     
     def __init__(self, ruleset_path: str):
         """
@@ -53,16 +96,19 @@ class QuestionSelectorV2:
         
         # Load ruleset
         with open(self.ruleset_path, 'r') as f:
-            self.ruleset = json.load(f)
+            raw_ruleset = json.load(f)
         
-        # Extract top-level components
+        # Deep copy to ensure we own the data
+        self.ruleset = copy.deepcopy(raw_ruleset)
+        
+        # Extract top-level components (these are references into frozen ruleset)
         self.section_order = self.ruleset.get("section_order")
         self.conditions = self.ruleset.get("conditions", {})
         self.trigger_conditions = self.ruleset.get("trigger_conditions", {})
         self.sections = self.ruleset.get("sections", {})
         self.follow_up_blocks = self.ruleset.get("follow_up_blocks", {})
         
-        # Validate ruleset structure
+        # Validate ruleset structure (fail fast)
         self._validate_ruleset()
         
         logger.info(f"Question Selector V2 initialized with {len(self.section_order)} sections")
@@ -71,36 +117,96 @@ class QuestionSelectorV2:
     # Public API
     # =========================================================================
     
+    def _validate_episode_data(self, episode_data: dict) -> None:
+        """
+        Validate episode_data structure and types.
+        
+        Args:
+            episode_data: Input to validate
+            
+        Raises:
+            TypeError: If episode_data is wrong type or has wrong field types
+            ValueError: If required keys are missing
+        """
+        if not isinstance(episode_data, dict):
+            raise TypeError(f"episode_data must be dict, got {type(episode_data).__name__}")
+        
+        # Check required keys exist
+        missing = self.REQUIRED_EPISODE_KEYS - set(episode_data.keys())
+        if missing:
+            raise ValueError(f"episode_data missing required keys: {missing}")
+        
+        # Validate types of tracking sets
+        for key in self.REQUIRED_EPISODE_KEYS:
+            value = episode_data[key]
+            # Accept both set and list (State Manager may serialize sets as lists)
+            if not isinstance(value, (set, list)):
+                raise TypeError(
+                    f"episode_data['{key}'] must be set or list, "
+                    f"got {type(value).__name__}"
+                )
+    
+    def _defensive_copy_episode_data(self, episode_data: dict) -> dict:
+        """
+        Create defensive copy of episode_data with sets normalized.
+        
+        Converts lists to sets for tracking fields, deep copies extracted fields.
+        
+        Args:
+            episode_data: Original episode data
+            
+        Returns:
+            dict: Defensive copy safe to use internally
+        """
+        copied = {}
+        
+        for key, value in episode_data.items():
+            if key in self.REQUIRED_EPISODE_KEYS:
+                # Convert to set (handles both set and list input)
+                copied[key] = set(value)
+            else:
+                # Deep copy extracted fields
+                copied[key] = copy.deepcopy(value)
+        
+        return copied
+    
     def get_next_question(self, episode_data: dict) -> Optional[dict]:
         """
         Get next question for episode.
         
         Args:
             episode_data: Complete episode state containing:
-                - questions_answered: set[str]
-                - follow_up_blocks_activated: set[str]
-                - follow_up_blocks_completed: set[str]
+                - questions_answered: set[str] or list[str]
+                - follow_up_blocks_activated: set[str] or list[str]
+                - follow_up_blocks_completed: set[str] or list[str]
                 - [extracted fields]: e.g., vl_laterality, h_present, etc.
         
         Returns:
-            Question dict with keys: id, question, field, field_type, etc.
+            Question dict (copy) with keys: id, question, field, field_type, etc.
             None if no more questions for this episode.
             
         Raises:
-            KeyError: If episode_data missing required keys
+            TypeError: If episode_data has wrong types
+            ValueError: If episode_data missing required keys
         """
-        # Extract required state
-        questions_answered = episode_data.get("questions_answered", set())
-        blocks_activated = episode_data.get("follow_up_blocks_activated", set())
-        blocks_completed = episode_data.get("follow_up_blocks_completed", set())
+        # Validate input
+        self._validate_episode_data(episode_data)
+        
+        # Defensive copy to prevent caller mutation affecting our logic
+        episode = self._defensive_copy_episode_data(episode_data)
+        
+        # Extract tracking sets (now guaranteed to be sets)
+        questions_answered = episode["questions_answered"]
+        blocks_activated = episode["follow_up_blocks_activated"]
+        blocks_completed = episode["follow_up_blocks_completed"]
         
         # Step 1: Check for pending follow-up block questions
         pending_blocks = blocks_activated - blocks_completed
         
         for block_id in sorted(pending_blocks):  # Deterministic order
-            next_q = self._get_next_block_question(block_id, questions_answered, episode_data)
+            next_q = self._get_next_block_question(block_id, questions_answered, episode)
             if next_q is not None:
-                return next_q
+                return copy.deepcopy(next_q)  # Return copy, not original
         
         # Step 2: Walk sections in order
         for section_name in self.section_order:
@@ -114,11 +220,11 @@ class QuestionSelectorV2:
                     continue
                 
                 # Check if eligible (probe or condition met)
-                if not self._is_eligible(question, episode_data):
+                if not self._is_eligible(question, episode):
                     continue
                 
-                # Found next question
-                return question
+                # Found next question - return copy
+                return copy.deepcopy(question)
         
         # Step 3: All done
         return None
@@ -133,10 +239,21 @@ class QuestionSelectorV2:
         Returns:
             set[str]: Block IDs that should be activated (e.g., {'block_1', 'block_3'})
             
+        Raises:
+            TypeError: If episode_data has wrong types
+            ValueError: If episode_data missing required keys
+            
         Note:
             Returns ALL blocks whose conditions are met, not just new ones.
-            Caller should compare with existing activated set to find new activations.
+            Caller is responsible for idempotency - compare with existing
+            activated set to find new activations.
         """
+        # Validate input
+        self._validate_episode_data(episode_data)
+        
+        # Defensive copy
+        episode = self._defensive_copy_episode_data(episode_data)
+        
         activated_blocks = set()
         
         for trigger_name, trigger_def in self.trigger_conditions.items():
@@ -144,7 +261,7 @@ class QuestionSelectorV2:
             activates = trigger_def.get("activates")
             
             # Evaluate trigger condition
-            if self._evaluate_dsl(condition, episode_data):
+            if self._evaluate_dsl(condition, episode):
                 # Add activated block(s)
                 if isinstance(activates, list):
                     activated_blocks.update(activates)
@@ -163,12 +280,27 @@ class QuestionSelectorV2:
             
         Returns:
             True if block is complete (all questions answered or ineligible)
+            
+        Raises:
+            TypeError: If episode_data has wrong types
+            ValueError: If episode_data missing required keys
+            
+        Note:
+            Ineligible questions are treated as implicitly skipped.
+            If eligibility later changes (new data), block cannot reopen.
+            This behavior will be revisited in V3 with contradiction detection.
         """
         if block_id not in self.follow_up_blocks:
             logger.warning(f"Unknown block: {block_id}")
             return True  # Treat unknown block as complete
         
-        questions_answered = episode_data.get("questions_answered", set())
+        # Validate input
+        self._validate_episode_data(episode_data)
+        
+        # Defensive copy
+        episode = self._defensive_copy_episode_data(episode_data)
+        
+        questions_answered = episode["questions_answered"]
         block_questions = self.follow_up_blocks[block_id].get("questions", [])
         
         for question in block_questions:
@@ -179,7 +311,7 @@ class QuestionSelectorV2:
                 continue
             
             # If not eligible (condition not met), skip
-            if not self._is_eligible(question, episode_data):
+            if not self._is_eligible(question, episode):
                 continue
             
             # Found unanswered, eligible question
@@ -217,7 +349,19 @@ class QuestionSelectorV2:
         """
         Evaluate DSL condition structure.
         
-        Supports: all, any, eq, ne, is_true, is_false, exists, contains_lower
+        Supported operators:
+            - Logical: all, any
+            - Comparison: eq, ne, gt, gte, lt, lte
+            - Boolean: is_true, is_false
+            - Existence: exists
+            - String: contains_lower
+        
+        Semantics:
+            - Missing field always evaluates to False (except for 'exists')
+            - Empty "all": True (vacuous truth)
+            - Empty "any": False (no conditions met)
+            - Empty DSL root: True (no constraints)
+            - Unknown operator: raises ValueError (fail fast)
         
         Args:
             dsl: DSL condition dict
@@ -225,6 +369,9 @@ class QuestionSelectorV2:
             
         Returns:
             bool: Evaluation result
+            
+        Raises:
+            ValueError: If unknown DSL operator encountered
         """
         if not dsl:
             return True  # Empty condition is vacuously true
@@ -242,53 +389,65 @@ class QuestionSelectorV2:
                 return False  # Empty any = no conditions met
             return any(self._evaluate_dsl(sub, episode_data) for sub in conditions)
         
-        # Comparison operators
+        # Comparison operators - missing field = False
         if "eq" in dsl:
             field, expected = dsl["eq"]
-            actual = episode_data.get(field)
-            return actual == expected
+            if field not in episode_data:
+                return False  # Missing field = condition not met
+            return episode_data[field] == expected
         
         if "ne" in dsl:
             field, expected = dsl["ne"]
-            actual = episode_data.get(field)
-            return actual != expected
+            if field not in episode_data:
+                return False  # Missing field = condition not met (FIXED: was True)
+            return episode_data[field] != expected
         
-        # Boolean operators
+        # Boolean operators - missing field = False
         if "is_true" in dsl:
             field = dsl["is_true"]
-            return episode_data.get(field) is True
+            if field not in episode_data:
+                return False  # Missing field = condition not met
+            return episode_data[field] is True
         
         if "is_false" in dsl:
             field = dsl["is_false"]
-            return episode_data.get(field) is False
+            if field not in episode_data:
+                return False  # Missing field = condition not met
+            return episode_data[field] is False
         
-        # Existence operator
+        # Existence operator - the one operator where missing field matters
         if "exists" in dsl:
             field = dsl["exists"]
             return field in episode_data and episode_data[field] is not None
         
-        # String operator
+        # String operator - missing field = False
         if "contains_lower" in dsl:
             field, substring = dsl["contains_lower"]
-            value = episode_data.get(field)
+            if field not in episode_data:
+                return False  # Missing field = condition not met
+            value = episode_data[field]
             if not isinstance(value, str):
-                return False
+                return False  # Non-string = condition not met
             return substring.lower() in value.lower()
         
-        # Numeric comparison operators
+        # Numeric comparison operators - missing field = False
         if "gte" in dsl:
             field, threshold = dsl["gte"]
-            value = episode_data.get(field)
+            if field not in episode_data:
+                return False  # Missing field = condition not met
+            value = episode_data[field]
             if value is None:
                 return False
             try:
                 return float(value) >= float(threshold)
             except (TypeError, ValueError):
-                return False
+                return False  # Type mismatch = condition not met
         
         if "gt" in dsl:
             field, threshold = dsl["gt"]
-            value = episode_data.get(field)
+            if field not in episode_data:
+                return False
+            value = episode_data[field]
             if value is None:
                 return False
             try:
@@ -298,7 +457,9 @@ class QuestionSelectorV2:
         
         if "lte" in dsl:
             field, threshold = dsl["lte"]
-            value = episode_data.get(field)
+            if field not in episode_data:
+                return False
+            value = episode_data[field]
             if value is None:
                 return False
             try:
@@ -308,7 +469,9 @@ class QuestionSelectorV2:
         
         if "lt" in dsl:
             field, threshold = dsl["lt"]
-            value = episode_data.get(field)
+            if field not in episode_data:
+                return False
+            value = episode_data[field]
             if value is None:
                 return False
             try:
@@ -316,9 +479,8 @@ class QuestionSelectorV2:
             except (TypeError, ValueError):
                 return False
         
-        # Unknown operator
-        logger.warning(f"Unknown DSL operator: {list(dsl.keys())}")
-        return False
+        # Unknown operator - fail fast (this is a ruleset bug)
+        raise ValueError(f"Unknown DSL operator: {list(dsl.keys())}")
     
     # =========================================================================
     # Question Selection Helpers
@@ -368,13 +530,16 @@ class QuestionSelectorV2:
         """
         Get next unanswered, eligible question from a block.
         
+        This is an internal method - caller (get_next_question) is responsible
+        for making a defensive copy before returning to external code.
+        
         Args:
             block_id: Block identifier
             questions_answered: Set of answered question IDs
-            episode_data: Current episode state
+            episode_data: Current episode state (already defensively copied)
             
         Returns:
-            Question dict or None if block complete
+            Question dict (internal reference) or None if block complete
         """
         if block_id not in self.follow_up_blocks:
             return None
@@ -400,21 +565,64 @@ class QuestionSelectorV2:
     # Validation
     # =========================================================================
     
+    def _validate_question(self, question: dict, location: str, errors: list) -> Optional[str]:
+        """
+        Validate a single question dict.
+        
+        Args:
+            question: Question dict to validate
+            location: Description of where question is (for error messages)
+            errors: List to append errors to
+            
+        Returns:
+            Question ID if valid (for duplicate tracking), None if ID missing
+        """
+        # Check required fields
+        missing_fields = self.REQUIRED_QUESTION_FIELDS - set(question.keys())
+        if missing_fields:
+            if 'id' in missing_fields:
+                errors.append(f"Question in {location} missing 'id' field")
+                return None
+            else:
+                q_id = question['id']
+                errors.append(f"Question '{q_id}' in {location} missing required fields: {missing_fields}")
+                return q_id
+        
+        q_id = question['id']
+        
+        # Check question type is valid
+        q_type = question.get('type', 'probe')  # Default is probe
+        if q_type not in self.VALID_QUESTION_TYPES:
+            errors.append(
+                f"Question '{q_id}' in {location} has invalid type '{q_type}'. "
+                f"Valid types: {self.VALID_QUESTION_TYPES}"
+            )
+        
+        # Check conditional questions have condition reference
+        if q_type == 'conditional':
+            condition_name = question.get('condition')
+            if condition_name and condition_name not in self.conditions:
+                errors.append(
+                    f"Question '{q_id}' in {location} references undefined condition '{condition_name}'"
+                )
+        
+        return q_id
+    
     def _validate_ruleset(self):
         """
         Validate ruleset structure on initialization.
         
         Checks:
-        - section_order exists
-        - All sections in section_order are defined
+        - section_order exists and references defined sections
+        - All questions have required fields (id, question, field)
+        - All question types are valid (probe, conditional)
         - All condition references exist
         - All trigger block references exist
-        - No duplicate question IDs in blocks
+        - No duplicate question IDs globally
         - No empty block question arrays
-        - All questions have 'id' field
         
         Raises:
-            ValueError: If validation fails
+            ValueError: If validation fails (fail fast)
         """
         errors = []
         
@@ -433,25 +641,14 @@ class QuestionSelectorV2:
         # Validate section questions
         for section_name, questions in self.sections.items():
             for i, question in enumerate(questions):
-                # Check question has ID
-                if "id" not in question:
-                    errors.append(f"Question at index {i} in section '{section_name}' missing 'id'")
-                    continue
+                location = f"section '{section_name}' index {i}"
+                q_id = self._validate_question(question, location, errors)
                 
-                q_id = question["id"]
-                
-                # Check for global duplicates
-                if q_id in all_question_ids:
-                    errors.append(f"Duplicate question id '{q_id}'")
-                all_question_ids.add(q_id)
-                
-                # Check condition reference
-                if question.get("type") == "conditional":
-                    condition_name = question.get("condition")
-                    if condition_name and condition_name not in self.conditions:
-                        errors.append(
-                            f"Question '{q_id}' references undefined condition '{condition_name}'"
-                        )
+                if q_id:
+                    # Check for global duplicates
+                    if q_id in all_question_ids:
+                        errors.append(f"Duplicate question id '{q_id}'")
+                    all_question_ids.add(q_id)
         
         # Validate follow-up blocks
         for block_id, block_def in self.follow_up_blocks.items():
@@ -465,31 +662,19 @@ class QuestionSelectorV2:
             block_question_ids = set()
             
             for i, question in enumerate(questions):
-                # Check question has ID
-                if "id" not in question:
-                    errors.append(f"Question at index {i} in block '{block_id}' missing 'id'")
-                    continue
+                location = f"block '{block_id}' index {i}"
+                q_id = self._validate_question(question, location, errors)
                 
-                q_id = question["id"]
-                
-                # Check for duplicates within block
-                if q_id in block_question_ids:
-                    errors.append(f"Duplicate question id '{q_id}' in block '{block_id}'")
-                block_question_ids.add(q_id)
-                
-                # Check for global duplicates
-                if q_id in all_question_ids:
-                    errors.append(f"Duplicate question id '{q_id}'")
-                all_question_ids.add(q_id)
-                
-                # Check condition reference
-                if question.get("type") == "conditional":
-                    condition_name = question.get("condition")
-                    if condition_name and condition_name not in self.conditions:
-                        errors.append(
-                            f"Question '{q_id}' in block '{block_id}' references "
-                            f"undefined condition '{condition_name}'"
-                        )
+                if q_id:
+                    # Check for duplicates within block
+                    if q_id in block_question_ids:
+                        errors.append(f"Duplicate question id '{q_id}' within block '{block_id}'")
+                    block_question_ids.add(q_id)
+                    
+                    # Check for global duplicates
+                    if q_id in all_question_ids:
+                        errors.append(f"Duplicate question id '{q_id}'")
+                    all_question_ids.add(q_id)
         
         # Validate trigger conditions
         for trigger_name, trigger_def in self.trigger_conditions.items():
