@@ -206,64 +206,6 @@ class StateManagerV2:
         
         logger.debug(f"Episode {episode_id}: {field_name} = {value}")
     
-    def route_and_store_fields(self, episode_id: int, extracted_fields: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Route extracted fields to episode or shared storage (ROUTING AUTHORITY)
-        
-        This method owns field routing logic. DialogueManager must not
-        call classify_field or set_episode_field/set_shared_field directly.
-        
-        Args:
-            episode_id: Current episode (1-indexed)
-            extracted_fields: Fields from Response Parser
-            
-        Returns:
-            dict: Unmapped fields (unknown classification)
-            
-        Raises:
-            ValueError: If episode_id doesn't exist
-        """
-        from backend.utils.episode_classifier import classify_field
-        
-        self._validate_episode_id(episode_id)
-        unmapped = {}
-        
-        for field_name, value in extracted_fields.items():
-            # Skip internal metadata fields
-            if field_name.startswith('_'):
-                continue
-            
-            # Classify field (State Manager authority)
-            classification = classify_field(field_name)
-            
-            if classification == 'episode':
-                # Route to episode storage
-                try:
-                    self.set_episode_field(episode_id, field_name, value)
-                    logger.debug(f"Episode {episode_id}: routed {field_name} = {value}")
-                except Exception as e:
-                    logger.error(f"Failed to store episode field {field_name}: {e}")
-                    unmapped[field_name] = value
-                    
-            elif classification == 'shared':
-                # Route to shared storage
-                try:
-                    self.set_shared_field(field_name, value)
-                    logger.debug(f"Shared data: routed {field_name} = {value}")
-                except Exception as e:
-                    logger.error(f"Failed to store shared field {field_name}: {e}")
-                    unmapped[field_name] = value
-                    
-            else:  # 'unknown'
-                # Quarantine unmapped fields
-                unmapped[field_name] = value
-                logger.warning(
-                    f"Unmapped field: {field_name} = {value} "
-                    f"(episode_id={episode_id}, classification={classification})"
-                )
-        
-        return unmapped
-    
     def get_episode(self, episode_id: int) -> Dict[str, Any]:
         """
         Get episode data (deep copy).
@@ -613,23 +555,124 @@ class StateManagerV2:
     # Export Methods
     # ========================
     
-    def export_for_json(self) -> Dict[str, Any]:
+    def snapshot_state(self) -> Dict[str, Any]:
         """
-        Export complete state for JSON formatter (clinical data only).
+        Export canonical consultation state (lossless, for persistence)
+        
+        This is the authoritative representation used for:
+        - Transport layer persistence (Flask session, console memory)
+        - Round-trip serialization (state â†’ snapshot â†’ state)
+        - V3 provenance and confidence tracking
+        
+        Properties:
+        - Lossless (no filtering)
+        - Includes ALL episodes (even empty ones)
+        - Includes operational fields (questions_answered, etc.)
+        - Includes dialogue history
+        - Schema-free (internal representation)
+        
+        Never use this for clinical output - use export_clinical_view() instead.
         
         Returns:
-            dict: {
-                'episodes': [...],
+            dict: Complete canonical state {
+                'episodes': [...],  # All episodes, with operational fields
+                'shared_data': {...},
+                'dialogue_history': {episode_id: [turns]}
+            }
+        """
+        # Serialize ALL episodes with operational fields (lossless)
+        serializable_episodes = [
+            self._serialize_episode(ep, exclude_operational=False)
+            for ep in self.episodes
+        ]
+        
+        return {
+            'episodes': serializable_episodes,
+            'shared_data': self._deep_copy(self.shared_data),
+            'dialogue_history': self._deep_copy(self.dialogue_history)
+        }
+    
+    @classmethod
+    def from_snapshot(cls, snapshot: Dict[str, Any], 
+                      data_model_path: str = "clinical_data_model.json") -> 'StateManagerV2':
+        """
+        Rehydrate StateManager from canonical snapshot
+        
+        This is the ONLY valid way to restore state from persistence.
+        Never rehydrate from clinical JSON output.
+        
+        Args:
+            snapshot: Output from snapshot_state()
+            data_model_path: Path to clinical data model
+            
+        Returns:
+            StateManagerV2: Fully restored state manager
+            
+        Raises:
+            ValueError: If snapshot is malformed
+        """
+        # Create fresh StateManager
+        state_manager = cls(data_model_path)
+        
+        # Restore episodes (including empty ones)
+        episodes = snapshot.get('episodes', [])
+        for episode_data in episodes:
+            episode_id = episode_data['episode_id']
+            
+            # Create episode if needed
+            while episode_id > len(state_manager.episodes):
+                state_manager.create_episode()
+            
+            # Restore all fields (including operational)
+            episode = state_manager.episodes[episode_id - 1]
+            for field_name, value in episode_data.items():
+                if field_name == 'episode_id':
+                    continue  # Already set by create_episode
+                
+                # Convert lists back to sets for operational fields
+                if field_name in {'questions_answered', 'follow_up_blocks_activated', 
+                                 'follow_up_blocks_completed'}:
+                    episode[field_name] = set(value) if isinstance(value, list) else value
+                else:
+                    episode[field_name] = state_manager._deep_copy(value)
+        
+        # Restore shared data
+        shared_data = snapshot.get('shared_data', {})
+        state_manager.shared_data = state_manager._deep_copy(shared_data)
+        
+        # Restore dialogue history
+        dialogue_history = snapshot.get('dialogue_history', {})
+        # Convert string keys back to int (JSON serialization converts int keys to strings)
+        state_manager.dialogue_history = {
+            int(ep_id): turns 
+            for ep_id, turns in dialogue_history.items()
+        }
+        
+        logger.info(f"Rehydrated StateManager: {len(episodes)} episodes")
+        return state_manager
+    
+    def export_clinical_view(self) -> Dict[str, Any]:
+        """
+        Export clinical projection (lossy, for output only)
+        
+        This is a one-way transformation for clinical output.
+        NEVER use this for persistence or rehydration.
+        
+        Properties:
+        - Lossy (filters empty episodes)
+        - Excludes operational fields
+        - Schema-compliant (for JSON formatter)
+        - Strips provenance/confidence (when V3 adds them)
+        
+        Use snapshot_state() for persistence instead.
+        
+        Returns:
+            dict: Clinical data only {
+                'episodes': [...],  # Non-empty only
                 'shared_data': {...}
             }
-            
-        Note: 
-            - Does NOT include current_episode_id (UI state)
-            - Excludes operational fields (questions_answered, follow_up_blocks_*)
-            - Excludes empty episodes (no clinical fields set)
-            - Converts sets to sorted lists for JSON serialization
         """
-        # Serialize episodes, excluding operational fields
+        # This is the old export_for_json logic
         serializable_episodes = [
             self._serialize_episode(ep, exclude_operational=True)
             for ep in self.episodes
@@ -646,6 +689,16 @@ class StateManagerV2:
             'episodes': non_empty_episodes,
             'shared_data': self._deep_copy(self.shared_data)
         }
+    
+    def export_for_json(self) -> Dict[str, Any]:
+        """
+        DEPRECATED: Use export_clinical_view() instead
+        
+        This method delegates to export_clinical_view() for backward compatibility.
+        Will be removed in future version.
+        """
+        logger.warning("export_for_json() is deprecated, use export_clinical_view() instead")
+        return self.export_clinical_view()
     
     def export_for_summary(self) -> Dict[str, Any]:
         """
