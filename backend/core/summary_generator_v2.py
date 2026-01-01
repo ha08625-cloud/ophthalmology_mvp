@@ -16,7 +16,7 @@ Design principles:
 
 import logging
 from typing import Dict, Any, List, Optional
-from ophthalmology_mvp.backend.utils.hf_client_v2 import HuggingFaceClient
+from backend.utils.hf_client_v2 import HuggingFaceClient
 
 logger = logging.getLogger(__name__)
 

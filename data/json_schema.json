@@ -34,7 +34,7 @@
         },
         
         "vision_loss": {
-          "visual_loss_present": {
+          "vl_present": {
             "type": "boolean",
             "required": true,
             "description": "Is vision loss present in this episode?"
@@ -135,11 +135,11 @@
             "required": "conditional",
             "description": "Brief blackouts when looking around (partial monocular loss)"
           },
-          "agnosia_present": {
+          "vl_agnosia": {
             "type": "boolean",
             "required": "conditional"
           },
-          "agnosia_description": {
+          "vl_agnosia_description": {
             "type": "text",
             "required": "conditional"
           }
@@ -162,10 +162,22 @@
             "valid_values": ["permanent", "transient", "intermittent"],
             "description": "Temporal pattern of color perception problems"
           },
+          "cp_single_eye": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["single", "both"]
+          },
           "cp_laterality": {
             "type": "categorical",
             "required": "conditional",
-            "valid_values": ["monocular", "binocular"]
+            "valid_values": ["left", "right"],
+            "description": "Which eye is affected (only asked if cp_single_eye is 'single')"
+          },
+          "cp_onset_simultaneity": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["simultaneous", "sequential"],
+            "description": "If binocular, were both eyes affected simultaneously?"
           },
           "cp_field": {
             "type": "text",
@@ -200,10 +212,22 @@
             "valid_values": ["permanent", "transient", "intermittent"],
             "description": "Temporal pattern of visual phenomena"
           },
+          "vp_single_eye": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["single", "both"]
+          },
           "vp_laterality": {
             "type": "categorical",
             "required": "conditional",
-            "valid_values": ["monocular", "binocular"]
+            "valid_values": ["left", "right"],
+            "description": "Which eye is affected (only asked if vp_single_eye is 'single')"
+          },
+          "vp_onset_simultaneity": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["simultaneous", "sequential"],
+            "description": "If binocular, were both eyes affected simultaneously?"
           },
           "vp_duration": {
             "type": "text",
@@ -252,23 +276,37 @@
             "required": "conditional",
             "description": "Has the diplopia completely resolved? Asked if dp_present is true."
           },
-          "vertigo_present": {
+          "dz_present": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Is there dizziness?"
+          },
+          "dz_description": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Description of dizziness"
+          },
+          "dz_vertigo": {
             "type": "boolean",
             "required": true
           },
-          "nystagmus_present": {
+          "dz_coordination": {
             "type": "boolean",
             "required": true
           },
-          "hallucinations_present": {
+          "dz_nystagmus": {
             "type": "boolean",
             "required": true
           },
-          "hallucinations_description": {
+          "hall_present": {
+            "type": "boolean",
+            "required": true
+          },
+          "hall_description": {
             "type": "text",
             "required": "conditional"
           },
-          "hallucinations_completely_resolved": {
+          "hall_completely_resolved": {
             "type": "boolean",
             "required": "conditional",
             "description": "Have the hallucinations completely resolved? Asked if hallucinations_present is true."

@@ -27,7 +27,7 @@ from transformers import (
     BitsAndBytesConfig
 )
 
-from prompt_formatter import PromptFormatter
+from backend.utils.prompt_formatter import PromptFormatter
 
 logger = logging.getLogger(__name__)
 

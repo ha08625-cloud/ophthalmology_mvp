@@ -493,7 +493,8 @@ class QuestionSelectorV2:
         Rules:
         - Probe question: always eligible
         - Conditional question: eligible only if condition is true
-        - Missing 'type' or 'condition': treated as probe
+        
+        Note: Type and condition presence validated at initialization by _validate_ruleset()
         
         Args:
             question: Question dict from ruleset
@@ -511,14 +512,9 @@ class QuestionSelectorV2:
         # Conditional questions require condition to be met
         if q_type == "conditional":
             condition_name = question.get("condition")
-            
-            # Missing condition treated as probe (always eligible)
-            if not condition_name:
-                return True
-            
             return self._evaluate_condition(condition_name, episode_data)
         
-        # Unknown type - treat as probe
+        # Unknown type - treat as probe (shouldn't happen due to validation)
         return True
     
     def _get_next_block_question(
@@ -591,7 +587,11 @@ class QuestionSelectorV2:
         q_id = question['id']
         
         # Check question type is valid
-        q_type = question.get('type', 'probe')  # Default is probe
+        q_type = question.get('type', '').strip()
+        if not q_type:
+            errors.append(f"Question '{q_id}' in {location} has no type specified")
+            q_type = 'probe'  # Set default for remaining validation
+        
         if q_type not in self.VALID_QUESTION_TYPES:
             errors.append(
                 f"Question '{q_id}' in {location} has invalid type '{q_type}'. "
@@ -600,8 +600,10 @@ class QuestionSelectorV2:
         
         # Check conditional questions have condition reference
         if q_type == 'conditional':
-            condition_name = question.get('condition')
-            if condition_name and condition_name not in self.conditions:
+            condition_name = question.get('condition', '').strip()
+            if not condition_name:
+                errors.append(f"Question '{q_id}' in {location} is conditional but has no condition specified")
+            elif condition_name not in self.conditions:
                 errors.append(
                     f"Question '{q_id}' in {location} references undefined condition '{condition_name}'"
                 )

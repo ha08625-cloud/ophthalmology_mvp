@@ -677,7 +677,9 @@ class DialogueManagerV2:
         try:
             episode_data = state_manager.get_episode_for_selector(episode_id)
             triggered_blocks = self.selector.check_triggers(episode_data)
-            already_activated = episode_data.get('follow_up_blocks_activated', set())
+            
+            # get_episode_for_selector returns lists, convert to set for set operations
+            already_activated = set(episode_data.get('follow_up_blocks_activated', []))
             
             new_blocks = triggered_blocks - already_activated
             for block_id in new_blocks:
@@ -691,8 +693,10 @@ class DialogueManagerV2:
         """Check if any blocks are now complete"""
         try:
             episode_data = state_manager.get_episode_for_selector(episode_id)
-            activated = episode_data.get('follow_up_blocks_activated', set())
-            completed = episode_data.get('follow_up_blocks_completed', set())
+            
+            # get_episode_for_selector returns lists, convert to sets for set operations
+            activated = set(episode_data.get('follow_up_blocks_activated', []))
+            completed = set(episode_data.get('follow_up_blocks_completed', []))
             pending = activated - completed
             
             for block_id in pending:
@@ -746,7 +750,7 @@ class DialogueManagerV2:
         )
         json_path = os.path.join(output_dir, json_filename)
         
-        from json_formatter_v2 import JSONFormatterV2
+        from backend.core.json_formatter_v2 import JSONFormatterV2
         JSONFormatterV2.save_to_file(json_data, json_path)
         
         # Generate summary

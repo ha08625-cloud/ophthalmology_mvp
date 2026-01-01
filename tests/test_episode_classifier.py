@@ -1,263 +1,221 @@
 """
-Unit tests for Episode Classifier
+Tests for Episode Classifier V3
 
-Tests field classification logic against schema v2.0.1
+Test categories:
+1. Prefix routing (episode vs shared)
+2. Collection routing
+3. Ambiguity detection
+4. Unknown field handling
+5. Configuration validation
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import pytest
 from backend.utils.episode_classifier import (
     classify_field,
-    get_all_episode_fields,
-    get_all_shared_fields,
     is_episode_field,
     is_shared_field,
-    get_episode_field_count,
-    get_shared_field_count
+    is_collection_field,
+    set_strict_mode,
+    EPISODE_PREFIXES,
+    SHARED_PREFIXES,
+    COLLECTION_FIELDS,
 )
 
 
-def test_classify_vision_loss_fields():
-    """Test vision loss fields classified as episode-specific"""
-    vision_loss_samples = [
-        'vl_laterality',
-        'vl_completely_resolved',
-        'vl_first_onset',
-        'vl_temporal_pattern',
-        'vl_degree',
-        'agnosia_present'
-    ]
+class TestPrefixRouting:
+    """Test prefix-based field routing"""
     
-    for field in vision_loss_samples:
-        result = classify_field(field)
-        assert result == 'episode', f"{field} should be 'episode', got '{result}'"
+    def test_episode_vision_loss(self):
+        assert classify_field('vl_laterality') == 'episode'
+        assert classify_field('vl_present') == 'episode'
+        assert classify_field('vl_field') == 'episode'
     
-    print("✓ Vision loss fields classified correctly")
+    def test_episode_headache(self):
+        assert classify_field('h_present') == 'episode'
+        assert classify_field('h_severity') == 'episode'
+    
+    def test_episode_eye_pain(self):
+        assert classify_field('ep_present') == 'episode'
+        assert classify_field('ep_laterality') == 'episode'
+    
+    def test_episode_follow_up_blocks(self):
+        assert classify_field('b1_uhthoff_phenomenon') == 'episode'
+        assert classify_field('b2_jaw_claudication') == 'episode'
+        assert classify_field('b6_can_see_moving_water') == 'episode'
+    
+    def test_shared_social_history(self):
+        assert classify_field('sh_smoking_status') == 'shared'
+        assert classify_field('sh_smoking_pack_years') == 'shared'
+        assert classify_field('sh_alcohol_units') == 'shared'
+    
+    def test_shared_systems_review(self):
+        assert classify_field('sr_gen_chills') == 'shared'
+        assert classify_field('sr_gen_chills_details') == 'shared'
+        assert classify_field('sr_neuro_weakness') == 'shared'
+        assert classify_field('sr_cardio_chest_pain') == 'shared'
+    
+    def test_all_episode_prefixes_route_correctly(self):
+        """Ensure all registered episode prefixes work"""
+        for prefix in EPISODE_PREFIXES:
+            test_field = f"{prefix}test_field"
+            assert classify_field(test_field) == 'episode', \
+                f"Prefix '{prefix}' failed to route as episode"
+    
+    def test_all_shared_prefixes_route_correctly(self):
+        """Ensure all registered shared prefixes work"""
+        for prefix in SHARED_PREFIXES:
+            test_field = f"{prefix}test_field"
+            assert classify_field(test_field) == 'shared', \
+                f"Prefix '{prefix}' failed to route as shared"
 
 
-def test_classify_visual_disturbances_fields():
-    """Test visual disturbances fields classified as episode-specific"""
-    disturbance_samples = [
-        'hallucinations_present',
-        'cp_present',
-        'cp_laterality',
-        'vp_present',
-        'vp_followed_by_headache',
-        'dp_present',
-        'vertigo_present',
-        'nystagmus_present'
-    ]
+class TestCollectionRouting:
+    """Test collection field routing"""
     
-    for field in disturbance_samples:
-        result = classify_field(field)
-        assert result == 'episode', f"{field} should be 'episode', got '{result}'"
+    def test_medications_is_shared(self):
+        assert classify_field('medications') == 'shared'
+        assert is_collection_field('medications')
     
-    print("✓ Visual disturbances fields classified correctly")
+    def test_past_medical_history_is_shared(self):
+        assert classify_field('past_medical_history') == 'shared'
+        assert is_collection_field('past_medical_history')
+    
+    def test_family_history_is_shared(self):
+        assert classify_field('family_history') == 'shared'
+        assert is_collection_field('family_history')
+    
+    def test_allergies_is_shared(self):
+        assert classify_field('allergies') == 'shared'
+        assert is_collection_field('allergies')
+    
+    def test_all_collections_route_correctly(self):
+        """Ensure all registered collections work"""
+        for collection in COLLECTION_FIELDS:
+            assert classify_field(collection) == 'shared', \
+                f"Collection '{collection}' failed to route as shared"
+            assert is_collection_field(collection), \
+                f"Collection '{collection}' not recognized by is_collection_field()"
 
 
-def test_classify_headache_fields():
-    """Test headache fields classified as episode-specific"""
-    headache_samples = [
-        'h_present',
-        'h_completely_resolved',
-        'h_first_onset',
-        'h_temporal_pattern',
-        'h_worse_on_straining'
-    ]
+class TestUnknownFields:
+    """Test unknown field handling"""
     
-    for field in headache_samples:
-        result = classify_field(field)
-        assert result == 'episode', f"{field} should be 'episode', got '{result}'"
+    def test_unknown_field_returns_unknown_in_permissive_mode(self):
+        set_strict_mode(False)
+        assert classify_field('random_unknown_field') == 'unknown'
     
-    print("✓ Headache fields classified correctly")
+    def test_unknown_field_raises_in_strict_mode(self):
+        set_strict_mode(True)
+        with pytest.raises(ValueError, match="Unknown field"):
+            classify_field('random_unknown_field')
+        set_strict_mode(False)  # Reset
+    
+    def test_partial_prefix_match_is_unknown(self):
+        # 'vl' without underscore should not match 'vl_'
+        assert classify_field('vltest') == 'unknown'
+        assert classify_field('shtest') == 'unknown'
+    
+    def test_suffix_match_is_unknown(self):
+        # Field ending with prefix should not match
+        assert classify_field('test_vl_') == 'unknown'
+        assert classify_field('test_sh_') == 'unknown'
 
 
-def test_classify_eye_pain_fields():
-    """Test eye pain and appearance fields classified as episode-specific"""
-    eye_pain_samples = [
-        'ep_present',
-        'ep_severity',
-        'appearance_changes_present',
-        'ac_redness',
-        'ac_proptosis',
-        'dry_gritty_sensation'
-    ]
+class TestAmbiguityDetection:
+    """Test ambiguity detection and fail-fast behavior"""
     
-    for field in eye_pain_samples:
-        result = classify_field(field)
-        assert result == 'episode', f"{field} should be 'episode', got '{result}'"
+    def test_no_ambiguity_in_current_config(self):
+        """Ensure current configuration has no ambiguous fields"""
+        # This should never raise - validates our registries are clean
+        test_fields = [
+            'vl_laterality',
+            'sh_smoking_status',
+            'medications',
+            'sr_gen_chills',
+            'h_present',
+        ]
+        for field in test_fields:
+            try:
+                classify_field(field)
+            except ValueError as e:
+                pytest.fail(f"Field '{field}' raised ambiguity error: {e}")
     
-    print("✓ Eye pain/appearance fields classified correctly")
-
-
-def test_classify_follow_up_block_fields():
-    """Test follow-up block fields classified as episode-specific"""
-    block_samples = [
-        # Block 1 (Optic Neuritis)
-        'previous_visual_loss_episodes',
-        'uhthoff_phenomenon',
+    def test_config_validation_catches_prefix_overlap(self):
+        """Test that overlapping prefixes would be caught at import"""
+        # This test documents the behavior - actual validation happens at import
+        # If we add 'vl_' to both EPISODE_PREFIXES and SHARED_PREFIXES, import fails
         
-        # Block 2 (GCA)
-        'scalp_tenderness',
-        'jaw_claudication',
+        # We can't easily test this without dynamic imports, but document it:
+        overlap = EPISODE_PREFIXES & SHARED_PREFIXES
+        assert len(overlap) == 0, \
+            "Prefix overlap detected - should have been caught at import"
+
+
+class TestHelperFunctions:
+    """Test helper functions for backward compatibility"""
+    
+    def test_is_episode_field(self):
+        assert is_episode_field('vl_laterality') is True
+        assert is_episode_field('sh_smoking_status') is False
+        assert is_episode_field('medications') is False
+    
+    def test_is_shared_field(self):
+        assert is_shared_field('sh_smoking_status') is True
+        assert is_shared_field('medications') is True
+        assert is_shared_field('vl_laterality') is False
+    
+    def test_is_collection_field(self):
+        assert is_collection_field('medications') is True
+        assert is_collection_field('sh_smoking_status') is False
+        assert is_collection_field('vl_laterality') is False
+
+
+class TestEdgeCases:
+    """Test edge cases and boundary conditions"""
+    
+    def test_empty_string(self):
+        assert classify_field('') == 'unknown'
+    
+    def test_single_character(self):
+        assert classify_field('v') == 'unknown'
+    
+    def test_underscore_only(self):
+        assert classify_field('_') == 'unknown'
+    
+    def test_prefix_without_field_name(self):
+        # Just the prefix with nothing after
+        assert classify_field('vl_') == 'episode'  # Still matches prefix
+        assert classify_field('sh_') == 'shared'
+    
+    def test_case_sensitivity(self):
+        # Prefixes are lowercase - uppercase should not match
+        assert classify_field('VL_laterality') == 'unknown'
+        assert classify_field('SH_smoking') == 'unknown'
+    
+    def test_numeric_suffix(self):
+        assert classify_field('vl_123') == 'episode'
+        assert classify_field('sh_456') == 'shared'
+
+
+class TestStrictMode:
+    """Test strict mode configuration"""
+    
+    def test_strict_mode_toggle(self):
+        # Start in permissive
+        set_strict_mode(False)
+        assert classify_field('unknown') == 'unknown'
         
-        # Block 3 (Pituitary)
-        'acromegalic_features',
-        'nipple_discharge',
+        # Enable strict
+        set_strict_mode(True)
+        with pytest.raises(ValueError):
+            classify_field('unknown')
         
-        # Block 6 (Higher visual processing)
-        'difficulty_reading',
-        'can_see_moving_water'
-    ]
+        # Disable strict
+        set_strict_mode(False)
+        assert classify_field('unknown') == 'unknown'
     
-    for field in block_samples:
-        result = classify_field(field)
-        assert result == 'episode', f"{field} should be 'episode', got '{result}'"
-    
-    print("✓ Follow-up block fields classified correctly")
-
-
-def test_classify_shared_fields():
-    """Test shared data fields classified correctly"""
-    shared_samples = [
-        'additional_episodes_present',
-        'past_medical_history',
-        'medications',
-        'family_history',
-        'smoking_status',
-        'occupation'
-    ]
-    
-    for field in shared_samples:
-        result = classify_field(field)
-        assert result == 'shared', f"{field} should be 'shared', got '{result}'"
-    
-    print("✓ Shared fields classified correctly")
-
-
-def test_classify_unknown_fields():
-    """Test unknown fields classified correctly"""
-    unknown_samples = [
-        'totally_made_up_field',
-        'random_data',
-        'not_in_schema',
-        'future_field_name'
-    ]
-    
-    for field in unknown_samples:
-        result = classify_field(field)
-        assert result == 'unknown', f"{field} should be 'unknown', got '{result}'"
-    
-    print("✓ Unknown fields classified correctly")
-
-
-def test_is_episode_field():
-    """Test is_episode_field() helper"""
-    assert is_episode_field('vl_laterality') == True
-    assert is_episode_field('h_present') == True
-    assert is_episode_field('medications') == False
-    assert is_episode_field('unknown') == False
-    
-    print("✓ is_episode_field() works correctly")
-
-
-def test_is_shared_field():
-    """Test is_shared_field() helper"""
-    assert is_shared_field('medications') == True
-    assert is_shared_field('smoking_status') == True
-    assert is_shared_field('vl_laterality') == False
-    assert is_shared_field('unknown') == False
-    
-    print("✓ is_shared_field() works correctly")
-
-
-def test_get_all_episode_fields():
-    """Test get_all_episode_fields() returns correct set"""
-    episode_fields = get_all_episode_fields()
-    
-    assert isinstance(episode_fields, set)
-    assert len(episode_fields) > 0
-    assert 'vl_laterality' in episode_fields
-    assert 'h_present' in episode_fields
-    assert 'medications' not in episode_fields
-    
-    print(f"✓ get_all_episode_fields() returns {len(episode_fields)} fields")
-
-
-def test_get_all_shared_fields():
-    """Test get_all_shared_fields() returns correct set"""
-    shared_fields = get_all_shared_fields()
-    
-    assert isinstance(shared_fields, set)
-    assert len(shared_fields) > 0
-    assert 'medications' in shared_fields
-    assert 'additional_episodes_present' in shared_fields
-    assert 'vl_laterality' not in shared_fields
-    
-    print(f"✓ get_all_shared_fields() returns {len(shared_fields)} fields")
-
-
-def test_field_counts():
-    """Test field count helpers"""
-    episode_count = get_episode_field_count()
-    shared_count = get_shared_field_count()
-    
-    assert episode_count > 0
-    assert shared_count > 0
-    assert episode_count > shared_count  # Episode fields should outnumber shared
-    
-    print(f"✓ Field counts: {episode_count} episode, {shared_count} shared")
-
-
-def test_no_field_overlap():
-    """Test that no field appears in both episode and shared sets"""
-    episode_fields = get_all_episode_fields()
-    shared_fields = get_all_shared_fields()
-    
-    overlap = episode_fields & shared_fields
-    
-    assert len(overlap) == 0, f"Fields appear in both sets: {overlap}"
-    
-    print("✓ No overlap between episode and shared fields")
-
-
-def test_all_sections_covered():
-    """Test that all major sections have fields defined"""
-    episode_fields = get_all_episode_fields()
-    
-    # Check each section has at least one field
-    assert any(f.startswith('vl_') for f in episode_fields), "Vision loss section missing"
-    assert any(f.startswith('h_') for f in episode_fields), "Headache section missing"
-    assert any(f.startswith('ep_') for f in episode_fields), "Eye pain section missing"
-    assert any(f.startswith('cp_') for f in episode_fields), "Color perception missing"
-    assert any(f.startswith('vp_') for f in episode_fields), "Visual phenomena missing"
-    assert any(f.startswith('dp_') for f in episode_fields), "Diplopia missing"
-    assert 'hallucinations_present' in episode_fields, "Hallucinations missing"
-    assert 'hc_contact_occurred' in episode_fields, "Healthcare contacts missing"
-    
-    print("✓ All major sections covered")
-
-
-if __name__ == '__main__':
-    print("\nTesting Episode Classifier...")
-    print("=" * 60)
-    
-    test_classify_vision_loss_fields()
-    test_classify_visual_disturbances_fields()
-    test_classify_headache_fields()
-    test_classify_eye_pain_fields()
-    test_classify_follow_up_block_fields()
-    test_classify_shared_fields()
-    test_classify_unknown_fields()
-    test_is_episode_field()
-    test_is_shared_field()
-    test_get_all_episode_fields()
-    test_get_all_shared_fields()
-    test_field_counts()
-    test_no_field_overlap()
-    test_all_sections_covered()
-    
-    print("=" * 60)
-    print("All Episode Classifier tests passed!\n")
+    def test_strict_mode_does_not_affect_valid_fields(self):
+        set_strict_mode(True)
+        assert classify_field('vl_laterality') == 'episode'
+        assert classify_field('sh_smoking_status') == 'shared'
+        set_strict_mode(False)

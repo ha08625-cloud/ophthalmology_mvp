@@ -3,13 +3,13 @@ State Manager V2 - Multi-episode consultation state management
 
 Responsibilities:
 - Store multiple episodes (array of episode objects)
-- Store shared data (PMH, medications, FH, SH)
+- Store shared data (flat scalars + arrays)
 - Store dialogue history per episode
 - Minimal API - pure data storage, no business logic
 
 Design principles:
 - Episodes as array (not dict) - preserves temporal order
-- Flat field structure within episodes (maintains compatibility)
+- Flat field structure (no dot notation nesting)
 - Clean separation: episode-specific vs shared data
 - No UI state in exported JSON (no "current_episode_id")
 - No clinical validation (State Manager is a dumb container)
@@ -47,7 +47,7 @@ class StateManagerV2:
     # but are NOT clinical data and should not appear in final JSON output.
     #
     # Exclusion behavior by method:
-    # - export_for_json(): EXCLUDES these fields (clinical output only)
+    # - export_clinical_view(): EXCLUDES these fields (clinical output only)
     # - export_for_summary(): INCLUDES these fields (summary may need context)
     # - get_episode_for_selector(): INCLUDES these fields (selector needs them)
     # - get_episode(): INCLUDES these fields (internal use, full access)
@@ -386,50 +386,44 @@ class StateManagerV2:
     
     def set_shared_field(self, field_name: str, value: Any) -> None:
         """
-        Set a shared data field (supports nested paths with dot notation).
+        Set a shared data field (flat structure).
+        
+        V3 Update: Removed dot notation support. All shared fields are now flat
+        with prefixes (e.g., 'sh_smoking_status', 'sr_gen_chills').
         
         Args:
-            field_name: Field to set (supports dot notation for nesting)
+            field_name: Flat field name (e.g., 'sh_smoking_status')
             value: Value to set
             
         Example:
-            state.set_shared_field('social_history.smoking.status', 'former')
-            state.set_shared_field('social_history.smoking.pack_years', 10)
+            state.set_shared_field('sh_smoking_status', 'former')
+            state.set_shared_field('sh_smoking_pack_years', 10)
+            state.set_shared_field('sr_gen_chills', True)
         """
-        if '.' in field_name:
-            parts = field_name.split('.')
-            
-            # Navigate to the parent container
-            container = self.shared_data
-            for part in parts[:-1]:
-                if part not in container:
-                    container[part] = {}
-                container = container[part]
-            
-            # Set the final value
-            container[parts[-1]] = value
-        else:
-            self.shared_data[field_name] = value
-        
+        self.shared_data[field_name] = value
         logger.debug(f"Shared data: {field_name} = {value}")
     
     def append_shared_array(self, field_name: str, item: Dict[str, Any]) -> None:
         """
-        Append item to shared data array (PMH, medications, FH, allergies).
+        Append item to shared data array (medications, past_medical_history, etc.).
         
         Args:
-            field_name: Array field name
-            item: Item to append
+            field_name: Array field name (e.g., 'medications', 'allergies')
+            item: Item to append (dict with local field names)
             
         Raises:
             TypeError: If field exists but is not a list
             
         Example:
             state.append_shared_array('medications', {
-                'medication_name': 'aspirin',
+                'name': 'aspirin',
                 'dose': '75mg',
                 'frequency': 'daily'
             })
+            
+        Note:
+            Item fields use local names ('name', not 'med_name').
+            This keeps collection items clean and standard.
         """
         if field_name not in self.shared_data:
             self.shared_data[field_name] = []
@@ -451,33 +445,22 @@ class StateManagerV2:
     
     def get_shared_field(self, field_name: str, default: Any = None) -> Any:
         """
-        Get a specific shared data field (supports nested paths with dot notation).
+        Get a specific shared data field (flat structure).
+        
+        V3 Update: Removed dot notation support. All shared fields are now flat.
         
         Args:
-            field_name: Field to retrieve (supports dot notation for nesting)
+            field_name: Flat field name (e.g., 'sh_smoking_status')
             default: Return value if field doesn't exist
             
         Returns:
             Field value (deep copy) or default
             
         Example:
-            status = state.get_shared_field('social_history.smoking.status')
-            pack_years = state.get_shared_field('social_history.smoking.pack_years', 0)
+            status = state.get_shared_field('sh_smoking_status')
+            pack_years = state.get_shared_field('sh_smoking_pack_years', 0)
         """
-        if '.' in field_name:
-            parts = field_name.split('.')
-            
-            # Navigate through the nested structure
-            container = self.shared_data
-            for part in parts[:-1]:
-                if part not in container or not isinstance(container[part], dict):
-                    return default
-                container = container[part]
-            
-            value = container.get(parts[-1], default)
-        else:
-            value = self.shared_data.get(field_name, default)
-        
+        value = self.shared_data.get(field_name, default)
         return self._deep_copy(value)
     
     # ========================
@@ -561,7 +544,7 @@ class StateManagerV2:
         
         This is the authoritative representation used for:
         - Transport layer persistence (Flask session, console memory)
-        - Round-trip serialization (state â†’ snapshot â†’ state)
+        - Round-trip serialization (state → snapshot → state)
         - V3 provenance and confidence tracking
         
         Properties:
@@ -570,13 +553,14 @@ class StateManagerV2:
         - Includes operational fields (questions_answered, etc.)
         - Includes dialogue history
         - Schema-free (internal representation)
+        - Flat structure (no nesting)
         
         Never use this for clinical output - use export_clinical_view() instead.
         
         Returns:
             dict: Complete canonical state {
                 'episodes': [...],  # All episodes, with operational fields
-                'shared_data': {...},
+                'shared_data': {...},  # Flat structure
                 'dialogue_history': {episode_id: [turns]}
             }
         """
@@ -594,7 +578,7 @@ class StateManagerV2:
     
     @classmethod
     def from_snapshot(cls, snapshot: Dict[str, Any], 
-                      data_model_path: str = "clinical_data_model.json") -> 'StateManagerV2':
+                      data_model_path: str = "data/clinical_data_model.json") -> 'StateManagerV2':
         """
         Rehydrate StateManager from canonical snapshot
         
@@ -636,7 +620,7 @@ class StateManagerV2:
                 else:
                     episode[field_name] = state_manager._deep_copy(value)
         
-        # Restore shared data
+        # Restore shared data (flat structure)
         shared_data = snapshot.get('shared_data', {})
         state_manager.shared_data = state_manager._deep_copy(shared_data)
         
@@ -661,18 +645,18 @@ class StateManagerV2:
         Properties:
         - Lossy (filters empty episodes)
         - Excludes operational fields
-        - Schema-compliant (for JSON formatter)
+        - Flat structure (JSON Formatter handles nesting)
         - Strips provenance/confidence (when V3 adds them)
         
         Use snapshot_state() for persistence instead.
         
         Returns:
             dict: Clinical data only {
-                'episodes': [...],  # Non-empty only
-                'shared_data': {...}
+                'episodes': [...],  # Non-empty only, flat fields
+                'shared_data': {...}  # Flat fields
             }
         """
-        # This is the old export_for_json logic
+        # Serialize episodes without operational fields
         serializable_episodes = [
             self._serialize_episode(ep, exclude_operational=True)
             for ep in self.episodes
@@ -709,8 +693,8 @@ class StateManagerV2:
         
         Returns:
             dict: {
-                'episodes': [...],
-                'shared_data': {...},
+                'episodes': [...],  # Flat fields with operational
+                'shared_data': {...},  # Flat fields
                 'dialogue_history': {episode_id: [turns]}
             }
         """

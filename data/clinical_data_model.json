@@ -1,6 +1,49 @@
 {
-  "version": "2.0.0",
-  "description": "Clinical data model defining initial state templates for ophthalmology consultations",
+  "version": "3.0.0",
+  "description": "Clinical data model defining initial state templates for ophthalmology consultations. V3.0.0: Migrated from nested dot notation to flat prefix-based field names.",
+  
+  "collection_schemas": {
+    "medications": {
+      "description": "Current medications",
+      "required_fields": ["name"],
+      "optional_fields": ["dose", "frequency", "indication"],
+      "example": {
+        "name": "Aspirin",
+        "dose": "75mg",
+        "frequency": "daily",
+        "indication": "cardiovascular prophylaxis"
+      }
+    },
+    "past_medical_history": {
+      "description": "Past medical conditions",
+      "required_fields": ["condition"],
+      "optional_fields": ["diagnosed_when", "current_status"],
+      "example": {
+        "condition": "Hypertension",
+        "diagnosed_when": "2015",
+        "current_status": "controlled"
+      }
+    },
+    "family_history": {
+      "description": "Family history of relevant conditions",
+      "required_fields": ["condition", "relationship"],
+      "optional_fields": [],
+      "example": {
+        "condition": "Glaucoma",
+        "relationship": "mother"
+      }
+    },
+    "allergies": {
+      "description": "Known allergies",
+      "required_fields": ["allergen"],
+      "optional_fields": ["reaction", "severity"],
+      "example": {
+        "allergen": "Penicillin",
+        "reaction": "rash",
+        "severity": "moderate"
+      }
+    }
+  },
   
   "shared_data_template": {
     "past_medical_history": [],
@@ -11,61 +54,70 @@
     
     "allergies": [],
     
-    "social_history": {
-      "smoking": {
-        "status": null,
-        "pack_years": null
-      },
-      "alcohol": {
-        "units_per_week": null,
-        "type": null
-      },
-      "illicit_drugs": {
-        "status": null,
-        "type": null,
-        "frequency": null
-      },
-      "occupation": {
-        "current": null,
-        "past": null
-      }
-    },
+    "sh_smoking_status": null,
+    "sh_smoking_pack_years": null,
     
-    "systems_review": {
-      "general_health": {
-        "chills": null,
-        "chills_details": null,
-        "fevers": null,
-        "fever_details": null,
-        "night_sweats": null,
-        "night_sweats_details": null,
-        "fatigue": null,
-        "fatigue_details": null,
-        "appetite_or_weight_change": null,
-        "appetite_weight_details": null,
-        "lumps": null,
-        "lumps_details": null,
-        "unwell": null,
-        "unwell_details": null
-      },
-      "neurological": {},
-      "ear_nose_throat": {},
-      "skin": {},
-      "respiratory": {},
-      "cardiovascular": {},
-      "blood": {},
-      "gastrointestinal": {},
-      "musculoskeletal": {},
-      "genitourinary": {},
-      "other": {}
-    }
+    "sh_alcohol_units_per_week": null,
+    "sh_alcohol_type": null,
+    
+    "sh_illicit_drugs_status": null,
+    "sh_illicit_drugs_type": null,
+    "sh_illicit_drugs_frequency": null,
+    
+    "sh_occupation_current": null,
+    "sh_occupation_past": null,
+    
+    "sr_gen_chills": null,
+    "sr_gen_chills_details": null,
+    "sr_gen_fevers": null,
+    "sr_gen_fever_details": null,
+    "sr_gen_night_sweats": null,
+    "sr_gen_night_sweats_details": null,
+    "sr_gen_fatigue": null,
+    "sr_gen_fatigue_details": null,
+    "sr_gen_appetite_or_weight_change": null,
+    "sr_gen_appetite_weight_details": null,
+    "sr_gen_lumps": null,
+    "sr_gen_lumps_details": null,
+    "sr_gen_unwell": null,
+    "sr_gen_unwell_details": null,
+    
+    "sr_neuro": {},
+    "sr_ent": {},
+    "sr_skin": {},
+    "sr_resp": {},
+    "sr_cardio": {},
+    "sr_blood": {},
+    "sr_gastro": {},
+    "sr_msk": {},
+    "sr_gu": {},
+    "sr_other": {}
   },
   
   "notes": {
     "purpose": "Defines initial empty state for consultation shared data. Episodes are created dynamically with operational fields (episode_id, questions_answered, follow_up_blocks) and do not need a template here.",
     "usage": "State Manager loads this file once at initialization and deep-copies the shared_data_template for each new consultation.",
-    "arrays": "past_medical_history, medications, family_history, and allergies start as empty arrays. Items are appended as they are collected.",
-    "nested_objects": "social_history and systems_review have pre-defined structure to prevent field name inconsistencies.",
-    "systems_review_status": "Only general_health is fully defined. Other systems (neurological, ENT, etc.) are placeholders to be populated when those sections are implemented."
+    "version_history": {
+      "3.0.0": "Migrated to flat prefix-based field names. Social history (sh_) and systems review (sr_) fields now use prefixes instead of nested dot notation. Added collection_schemas section for validation.",
+      "2.0.0": "Multi-episode architecture with nested social_history and systems_review structure.",
+      "1.0.0": "Initial single-episode version."
+    },
+    "prefix_conventions": {
+      "sh_": "Social history fields (smoking, alcohol, drugs, occupation)",
+      "sr_gen_": "Systems review - general health / B-symptoms",
+      "sr_neuro_": "Systems review - neurological (placeholder)",
+      "sr_ent_": "Systems review - ear, nose, throat (placeholder)",
+      "sr_skin_": "Systems review - skin (placeholder)",
+      "sr_resp_": "Systems review - respiratory (placeholder)",
+      "sr_cardio_": "Systems review - cardiovascular (placeholder)",
+      "sr_blood_": "Systems review - haematological (placeholder)",
+      "sr_gastro_": "Systems review - gastrointestinal (placeholder)",
+      "sr_msk_": "Systems review - musculoskeletal (placeholder)",
+      "sr_gu_": "Systems review - genitourinary (placeholder)",
+      "sr_other_": "Systems review - other (placeholder)"
+    },
+    "collection_schemas": "Defines expected structure for array items. Required fields must be present; optional fields may be null or absent. Used for validation and documentation.",
+    "arrays": "past_medical_history, medications, family_history, and allergies start as empty arrays. Items are appended as they are collected. Item fields use local names (e.g., 'name', not 'med_name').",
+    "placeholder_systems": "Systems review sections other than general_health are empty objects ({}) serving as placeholders for future implementation. These will be populated with sr_[system]_ prefixed fields when those sections are added."
   }
 }
