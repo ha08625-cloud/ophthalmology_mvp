@@ -229,6 +229,106 @@ class QuestionSelectorV2:
         # Step 3: All done
         return None
     
+    def get_next_n_questions(self, current_question_id: str, n: int = 3) -> list:
+        """
+        Get the next n questions in sequence after current_question_id.
+        
+        This method is used to build a metadata window for the Response Parser,
+        allowing it to extract information for upcoming questions when patients
+        volunteer information ahead of being asked.
+        
+        Rules:
+        - Returns only questions from the same symptom category (prefix)
+        - Ignores all conditions (includes conditional questions regardless of state)
+        - Returns questions in sequential numeric order
+        - Does not wrap to next symptom category at boundary
+        - Returns fewer than n questions if near end of category
+        - Returns empty list if current question is last in category or not found
+        
+        Args:
+            current_question_id: Question ID (e.g., "vl_5", "cp_2")
+            n: Number of questions to return (default 3)
+        
+        Returns:
+            List of question dicts (copies), may be empty or shorter than n.
+            Each dict contains: id, question, field, field_type, valid_values, etc.
+        
+        Examples:
+            get_next_n_questions("vl_5", 3) -> [vl_6, vl_7, vl_8]
+            get_next_n_questions("vl_20", 3) -> [vl_21]  # only 1 left
+            get_next_n_questions("vl_21", 3) -> []  # last question
+            get_next_n_questions("cp_8", 3) -> [cp_9]  # doesn't wrap to next category
+        """
+        # Handle edge case: n <= 0
+        if n <= 0:
+            return []
+        
+        # Extract symptom prefix and number from current question ID
+        # e.g., "vl_5" -> prefix="vl", num=5
+        parts = current_question_id.split('_')
+        if len(parts) < 2:
+            logger.warning(f"Invalid question_id format: {current_question_id}")
+            return []
+        
+        # Prefix is everything except the last part (handles multi-part prefixes)
+        # Last part must be numeric
+        try:
+            current_num = int(parts[-1])
+            prefix = '_'.join(parts[:-1])
+        except ValueError:
+            logger.warning(f"Question ID does not end with number: {current_question_id}")
+            return []
+        
+        # Collect all questions with matching prefix from entire ruleset
+        matching_questions = []
+        
+        # Scan sections
+        for section_name in self.section_order:
+            section_questions = self.sections.get(section_name, [])
+            for question in section_questions:
+                q_id = question.get('id', '')
+                q_parts = q_id.split('_')
+                
+                if len(q_parts) >= 2:
+                    try:
+                        q_num = int(q_parts[-1])
+                        q_prefix = '_'.join(q_parts[:-1])
+                        
+                        if q_prefix == prefix:
+                            matching_questions.append((q_num, question))
+                    except ValueError:
+                        continue
+        
+        # Scan follow-up blocks
+        for block_id, block_def in self.follow_up_blocks.items():
+            block_questions = block_def.get("questions", [])
+            for question in block_questions:
+                q_id = question.get('id', '')
+                q_parts = q_id.split('_')
+                
+                if len(q_parts) >= 2:
+                    try:
+                        q_num = int(q_parts[-1])
+                        q_prefix = '_'.join(q_parts[:-1])
+                        
+                        if q_prefix == prefix:
+                            matching_questions.append((q_num, question))
+                    except ValueError:
+                        continue
+        
+        # Sort by question number
+        matching_questions.sort(key=lambda x: x[0])
+        
+        # Find next n questions after current_num
+        result = []
+        for q_num, question in matching_questions:
+            if q_num > current_num:
+                result.append(copy.deepcopy(question))
+                if len(result) >= n:
+                    break
+        
+        return result
+    
     def check_triggers(self, episode_data: dict) -> set:
         """
         Check which follow-up blocks should be activated based on current state.
