@@ -29,6 +29,7 @@ from typing import Optional, Dict, Any, List
 # When copying to local, adjust to: from backend.utils.helpers import ...
 from helpers import generate_consultation_id, generate_consultation_filename
 from episode_classifier import classify_field
+from conversation_modes import ConversationMode
 
 # Command and result types
 # When copying to local, adjust to: from backend.commands import ...
@@ -149,6 +150,62 @@ class DialogueManagerV2:
         if not (hasattr(summary_generator, 'generate') and 
                 callable(getattr(summary_generator, 'generate', None))):
             raise TypeError("summary_generator must have callable generate() method")
+    
+    # =========================================================================
+    # CONVERSATION MODE MANAGEMENT (V3)
+    # =========================================================================
+    
+    def _determine_next_mode(
+        self,
+        current_mode: ConversationMode,
+        state_snapshot: Dict[str, Any],
+        ehg_signal: Optional[Any] = None,
+        ehm_directive: Optional[str] = None
+    ) -> ConversationMode:
+        """
+        Determine next conversation mode.
+        
+        CRITICAL INVARIANTS:
+        - MODE_CLARIFICATION is sticky until explicit resolution
+        - Mode changes are explicit, never implicit recomputation  
+        - No mode changes based on convenience (e.g., episode count)
+        
+        NOTE:
+        This function intentionally performs no transitions in V3 placeholder.
+        All mode changes will be added explicitly once EHG + clarification
+        plumbing is complete. Do not infer mode from state.
+        
+        TODO (V3-EHG-Integration): Remove no-op placeholder once:
+        - EHG signals are wired through UserTurn flow
+        - EHM resolution directives are implemented
+        - Pivot detection is live
+        
+        Clarification Exit Authority:
+        MODE_CLARIFICATION can ONLY be exited via explicit EHM directive.
+        No falling out via timeout, retry exhaustion, or state inspection.
+        Episode Hypothesis Management (EHM) owns clarification lifecycle.
+        
+        Args:
+            current_mode: Authoritative current mode from state
+            state_snapshot: State data (for future transition rules)
+            ehg_signal: Episode hypothesis signal (unused in placeholder)
+            ehm_directive: Episode hypothesis management directive (unused)
+        
+        Returns:
+            ConversationMode: Next mode (currently always equals current_mode)
+            
+        Raises:
+            TypeError: If current_mode is not ConversationMode enum
+        """
+        # Guardrail: Catch silent corruption early (fail-fast)
+        if not isinstance(current_mode, ConversationMode):
+            raise TypeError(
+                f"current_mode must be ConversationMode, got {type(current_mode).__name__}"
+            )
+        
+        # V3 Placeholder: No transitions implemented
+        # Mode is sticky until explicit transition logic exists
+        return current_mode
     
     # =========================================================================
     # PUBLIC API - Command Handler
@@ -366,6 +423,21 @@ class DialogueManagerV2:
         pending_question = state_snapshot.get('pending_question')
         errors = state_snapshot.get('errors', [])
         
+        # V3: Extract and validate current conversation mode
+        current_mode_str = state_snapshot.get('conversation_mode', ConversationMode.MODE_EPISODE_EXTRACTION.value)
+        current_mode = ConversationMode(current_mode_str)
+        
+        # V3: Determine next mode (currently no-op, returns current_mode)
+        next_mode = self._determine_next_mode(
+            current_mode=current_mode,
+            state_snapshot=state_snapshot,
+            ehg_signal=None,  # TODO (V3-EHG): Wire Episode Hypothesis Generator
+            ehm_directive=None  # TODO (V3-EHM): Wire Episode Hypothesis Management
+        )
+        
+        # V3: Update state manager with next mode
+        state_manager.conversation_mode = next_mode.value
+        
         if turn_count < 0:
             raise ValueError("state_snapshot has invalid turn_count")
         
@@ -384,7 +456,8 @@ class DialogueManagerV2:
                 pending_question=pending_question,
                 errors=errors,
                 debug={'exit_command': True},
-                consultation_complete=True
+                consultation_complete=True,
+                previous_mode=current_mode_str  # V3: Track mode changes
             )
         
         # Determine what we're processing
@@ -395,7 +468,8 @@ class DialogueManagerV2:
                 consultation_id=consultation_id,
                 turn_count=turn_count,
                 current_episode_id=current_episode_id,
-                errors=errors
+                errors=errors,
+                previous_mode=current_mode_str  # V3: Track mode changes
             )
         
         elif awaiting_episode_transition:
@@ -407,7 +481,8 @@ class DialogueManagerV2:
                 turn_count=turn_count,
                 current_episode_id=current_episode_id,
                 pending_question=pending_question,
-                errors=errors
+                errors=errors,
+                previous_mode=current_mode_str  # V3: Track mode changes
             )
         
         else:
@@ -419,12 +494,17 @@ class DialogueManagerV2:
                 turn_count=turn_count,
                 current_episode_id=current_episode_id,
                 pending_question=pending_question,
-                errors=errors
+                errors=errors,
+                previous_mode=current_mode_str  # V3: Track mode changes
             )
     
     def _initialize_new_consultation(self):
         """
         Initialize new consultation (first turn only)
+        
+        V3: Sets explicit initial conversation mode (policy decision).
+        All consultations start in MODE_DISCOVERY until EHG-driven
+        transitions are implemented.
         
         Returns:
             tuple: (state_manager, turn_count, current_episode_id, consultation_id)
@@ -435,10 +515,15 @@ class DialogueManagerV2:
         state_manager = self.state_manager_class("data/clinical_data_model.json")
         first_episode_id = state_manager.create_episode()
         
+        # V3: Set initial mode explicitly (policy decision, not inference)
+        # StateManager.__init__ already sets MODE_DISCOVERY as default,
+        # but we make it explicit here for clarity
+        state_manager.conversation_mode = ConversationMode.MODE_DISCOVERY.value
+        
         # No JSON formatter call - just return the state manager
         # Empty episode is preserved in canonical state
         
-        logger.info(f"Initialized consultation {consultation_id}")
+        logger.info(f"Initialized consultation {consultation_id}, mode={ConversationMode.MODE_DISCOVERY.value}")
         
         return state_manager, 0, first_episode_id, consultation_id
     
@@ -454,16 +539,29 @@ class DialogueManagerV2:
         pending_question: Optional[Dict],
         errors: list,
         debug: Dict,
-        consultation_complete: bool
+        consultation_complete: bool,
+        previous_mode: Optional[str] = None  # V3: For mode_changed detection
     ) -> TurnResult:
         """
         Build TurnResult with opaque ConsultationState and enhanced debug.
         
         The state is wrapped in ConsultationState envelope - Flask cannot inspect it.
         Routing debug is added to debug dict.
+        
+        V3: Tracks conversation mode and detects mode transitions.
+        
+        Args:
+            previous_mode: Previous conversation mode (for detecting changes)
+                         If None, mode_changed defaults to False
         """
         # Get canonical snapshot (lossless, for persistence)
         canonical_snapshot = state_manager.snapshot_state()
+        
+        # V3: Extract current mode from state manager
+        current_mode = canonical_snapshot.get('conversation_mode', ConversationMode.MODE_EPISODE_EXTRACTION.value)
+        
+        # V3: Detect mode change
+        mode_changed = (previous_mode is not None and previous_mode != current_mode)
         
         # Add turn-level metadata (not in StateManager)
         canonical_snapshot['consultation_id'] = consultation_id
@@ -490,7 +588,9 @@ class DialogueManagerV2:
             turn_metadata={
                 'turn_count': turn_count,
                 'current_episode_id': current_episode_id,
-                'consultation_id': consultation_id
+                'consultation_id': consultation_id,
+                'conversation_mode': current_mode,  # V3: Current mode
+                'mode_changed': mode_changed  # V3: Alert transport layer
             },
             consultation_complete=consultation_complete
         )
@@ -501,7 +601,8 @@ class DialogueManagerV2:
         consultation_id: str,
         turn_count: int,
         current_episode_id: int,
-        errors: list
+        errors: list,
+        previous_mode: Optional[str] = None  # V3: For mode change tracking
     ) -> TurnResult:
         """
         Get first question for new consultation
@@ -512,6 +613,7 @@ class DialogueManagerV2:
             turn_count: Current turn count
             current_episode_id: Current episode ID
             errors: List of errors from previous turns
+            previous_mode: Previous conversation mode (V3)
             
         Returns:
             TurnResult with first question
@@ -535,7 +637,8 @@ class DialogueManagerV2:
                 pending_question=None,
                 errors=errors,
                 debug={'error': 'no_questions'},
-                consultation_complete=True
+                consultation_complete=True,
+                previous_mode=previous_mode
             )
         
         return self._build_turn_result(
@@ -549,7 +652,8 @@ class DialogueManagerV2:
             pending_question=question_dict,
             errors=errors,
             debug={'first_question': True},
-            consultation_complete=False
+            consultation_complete=False,
+            previous_mode=previous_mode
         )
     
     def _process_regular_turn(
@@ -560,7 +664,8 @@ class DialogueManagerV2:
         turn_count: int,
         current_episode_id: int,
         pending_question: Dict,
-        errors: list
+        errors: list,
+        previous_mode: Optional[str] = None  # V3: For mode change tracking
     ) -> TurnResult:
         """
         Process answer to regular question
@@ -573,6 +678,7 @@ class DialogueManagerV2:
             current_episode_id: Current episode ID
             pending_question: Question being answered
             errors: List of errors from previous turns
+            previous_mode: Previous conversation mode (V3)
             
         Returns:
             TurnResult with next question or episode transition
@@ -681,7 +787,8 @@ class DialogueManagerV2:
                     'parser_output': parse_result,
                     'episode_complete': True
                 },
-                consultation_complete=False
+                consultation_complete=False,
+                previous_mode=previous_mode
             )
         else:
             # Continue with next question
@@ -696,7 +803,8 @@ class DialogueManagerV2:
                 pending_question=next_question,
                 errors=errors,
                 debug={'parser_output': parse_result},
-                consultation_complete=False
+                consultation_complete=False,
+                previous_mode=previous_mode
             )
     
     def _process_episode_transition(
@@ -707,7 +815,8 @@ class DialogueManagerV2:
         turn_count: int,
         current_episode_id: int,
         pending_question: Dict,
-        errors: list
+        errors: list,
+        previous_mode: Optional[str] = None  # V3: For mode change tracking
     ) -> TurnResult:
         """
         Process answer to episode transition question
@@ -720,6 +829,7 @@ class DialogueManagerV2:
             current_episode_id: Current episode ID
             pending_question: Episode transition question
             errors: List of errors from previous turns
+            previous_mode: Previous conversation mode (V3)
             
         Returns:
             TurnResult with new episode question or finalization
@@ -775,7 +885,8 @@ class DialogueManagerV2:
                         'parser_output': parse_result,
                         'new_episode': new_episode_id
                     },
-                    consultation_complete=False
+                    consultation_complete=False,
+                    previous_mode=previous_mode
                 )
             else:
                 # No more episodes - consultation complete
@@ -793,7 +904,8 @@ class DialogueManagerV2:
                         'parser_output': parse_result,
                         'no_more_episodes': True
                     },
-                    consultation_complete=True
+                    consultation_complete=True,
+                    previous_mode=previous_mode
                 )
         
         else:
@@ -813,7 +925,8 @@ class DialogueManagerV2:
                     'parser_output': parse_result,
                     'unclear_transition': True
                 },
-                consultation_complete=False
+                consultation_complete=False,
+                previous_mode=previous_mode
             )
     
     def _route_extracted_fields(
