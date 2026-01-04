@@ -35,6 +35,10 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
+# Flat imports for server testing
+# When copying to local, adjust to: from backend.conversation_modes import ...
+from conversation_modes import ConversationMode, VALID_MODES
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,6 +80,12 @@ class StateManagerV2:
         self.episodes: List[Dict[str, Any]] = []
         self.shared_data: Dict[str, Any] = self._deep_copy(self.data_model["shared_data_template"])
         self.dialogue_history: Dict[int, List[Dict[str, Any]]] = {}
+        
+        # Conversation mode (placeholder for new instances)
+        # CRITICAL: This default is overridden by from_snapshot() during rehydration.
+        # Only applies to fresh StateManager instances created by DialogueManager._handle_start()
+        # Do not rely on this default for persistence logic.
+        self.conversation_mode = ConversationMode.MODE_DISCOVERY.value
 
         logger.info(f"State Manager V2 initialized (multi-episode, model version {self.data_model.get('version', 'unknown')})")
     
@@ -95,6 +105,36 @@ class StateManagerV2:
         """
         if episode_id < 1 or episode_id > len(self.episodes):
             raise ValueError(f"Episode {episode_id} does not exist")
+    
+    def _validate_conversation_mode(self, mode: str) -> None:
+        """
+        Validate conversation mode field (fail-fast data integrity check).
+        
+        This is data integrity validation, not business logic.
+        StateManager cannot derive or repair mode - it only validates
+        that the mode string is one of the recognized values.
+        
+        DialogueManager owns all mode transition logic.
+        
+        Args:
+            mode: Mode string from state snapshot
+            
+        Raises:
+            ValueError: If mode is not in VALID_MODES
+            
+        Example:
+            # Valid
+            self._validate_conversation_mode("discovery")  # OK
+            
+            # Invalid - will raise
+            self._validate_conversation_mode("invalid")  # ValueError
+            self._validate_conversation_mode(None)  # ValueError
+        """
+        if mode not in VALID_MODES:
+            raise ValueError(
+                f"Invalid conversation_mode: '{mode}'. "
+                f"Must be one of {VALID_MODES}"
+            )
     
     def _deep_copy(self, obj: Any) -> Any:
         """
@@ -544,7 +584,7 @@ class StateManagerV2:
         
         This is the authoritative representation used for:
         - Transport layer persistence (Flask session, console memory)
-        - Round-trip serialization (state → snapshot → state)
+        - Round-trip serialization (state Ã¢â€ â€™ snapshot Ã¢â€ â€™ state)
         - V3 provenance and confidence tracking
         
         Properties:
@@ -561,7 +601,8 @@ class StateManagerV2:
             dict: Complete canonical state {
                 'episodes': [...],  # All episodes, with operational fields
                 'shared_data': {...},  # Flat structure
-                'dialogue_history': {episode_id: [turns]}
+                'dialogue_history': {episode_id: [turns]},
+                'conversation_mode': 'discovery' | 'clarification' | 'extraction'
             }
         """
         # Serialize ALL episodes with operational fields (lossless)
@@ -573,7 +614,8 @@ class StateManagerV2:
         return {
             'episodes': serializable_episodes,
             'shared_data': self._deep_copy(self.shared_data),
-            'dialogue_history': self._deep_copy(self.dialogue_history)
+            'dialogue_history': self._deep_copy(self.dialogue_history),
+            'conversation_mode': self.conversation_mode  # V3: Explicit mode tracking
         }
     
     @classmethod
@@ -632,7 +674,13 @@ class StateManagerV2:
             for ep_id, turns in dialogue_history.items()
         }
         
-        logger.info(f"Rehydrated StateManager: {len(episodes)} episodes")
+        # Restore conversation mode with validation (V3)
+        # Default to 'extraction' for backwards compatibility with pre-V3 snapshots
+        mode = snapshot.get('conversation_mode', ConversationMode.MODE_EPISODE_EXTRACTION.value)
+        state_manager._validate_conversation_mode(mode)
+        state_manager.conversation_mode = mode
+        
+        logger.info(f"Rehydrated StateManager: {len(episodes)} episodes, mode={mode}")
         return state_manager
     
     def export_clinical_view(self) -> Dict[str, Any]:
