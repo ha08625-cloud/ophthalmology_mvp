@@ -23,7 +23,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 
-from backend.utils.hf_client_v2 import HuggingFaceClient
+from hf_client import HuggingFaceClient
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,9 @@ class ResponseParserV2:
         self,
         question: Dict[str, Any],
         patient_response: str,
-        turn_id: Optional[str] = None
+        turn_id: Optional[str] = None,
+        next_questions: Optional[List[Dict[str, Any]]] = None,
+        symptom_categories: Optional[List[str]] = None
     ) -> ParseResult:
         """
         Extract structured fields from patient response.
@@ -110,6 +112,12 @@ class ResponseParserV2:
                 Optional: 'valid_values', 'definitions'
             patient_response: What patient said
             turn_id: Dialogue turn identifier (e.g., 'turn_05') for provenance
+            next_questions: List of upcoming question dicts (for metadata window).
+                Parser may extract fields from these if patient mentions them.
+                Default None (single-question mode, backward compatible).
+            symptom_categories: List of symptom category field names (e.g., 'vl_present').
+                Parser may extract these if patient mentions new symptoms.
+                Default None (no symptom categories).
             
         Returns:
             ParseResult: {
@@ -136,6 +144,22 @@ class ResponseParserV2:
                 'fields': {},
                 'parse_metadata': {'turn_id': 'turn_06', ...}
             }
+            
+            >>> # Multi-question window
+            >>> parse(
+            ...     question={'id': 'vl_5', 'field': 'vl_laterality', ...},
+            ...     patient_response='Right eye, started yesterday',
+            ...     turn_id='turn_05',
+            ...     next_questions=[
+            ...         {'id': 'vl_6', 'field': 'vl_first_onset', ...},
+            ...         {'id': 'vl_7', 'field': 'vl_pattern', ...}
+            ...     ]
+            ... )
+            {
+                'outcome': 'success',
+                'fields': {'vl_laterality': 'right', 'vl_first_onset': 'yesterday'},
+                'parse_metadata': {...}
+            }
         """
         # Validate inputs
         if not isinstance(question, dict):
@@ -150,6 +174,36 @@ class ResponseParserV2:
             raise TypeError(
                 f"patient_response must be string, got {type(patient_response).__name__}"
             )
+        
+        # Validate next_questions if provided
+        if next_questions is not None:
+            if not isinstance(next_questions, list):
+                raise TypeError(
+                    f"next_questions must be list, got {type(next_questions).__name__}"
+                )
+            for i, nq in enumerate(next_questions):
+                if not isinstance(nq, dict):
+                    raise TypeError(
+                        f"next_questions[{i}] must be dict, got {type(nq).__name__}"
+                    )
+                # Verify required keys (same as main question)
+                missing_nq_keys = required_keys - set(nq.keys())
+                if missing_nq_keys:
+                    raise ValueError(
+                        f"next_questions[{i}] missing required keys: {missing_nq_keys}"
+                    )
+        
+        # Validate symptom_categories if provided
+        if symptom_categories is not None:
+            if not isinstance(symptom_categories, list):
+                raise TypeError(
+                    f"symptom_categories must be list, got {type(symptom_categories).__name__}"
+                )
+            for i, sc in enumerate(symptom_categories):
+                if not isinstance(sc, str):
+                    raise TypeError(
+                        f"symptom_categories[{i}] must be str, got {type(sc).__name__}"
+                    )
         
         # Extract question metadata
         expected_field = question['field']
@@ -189,7 +243,12 @@ class ResponseParserV2:
             }
         
         # Build extraction prompt
-        prompt = self._build_prompt(question, patient_response)
+        prompt = self._build_prompt(
+            question=question,
+            patient_response=patient_response,
+            next_questions=next_questions,
+            symptom_categories=symptom_categories
+        )
         logger.debug(f"[{question_id}] Built prompt for field '{expected_field}'")
         
         # Call LLM
@@ -249,7 +308,9 @@ class ResponseParserV2:
             expected_field=expected_field,
             field_type=field_type,
             valid_values=valid_values,
-            parse_metadata=parse_metadata  # Passed by reference, will be mutated
+            parse_metadata=parse_metadata,  # Passed by reference, will be mutated
+            next_questions=next_questions,
+            symptom_categories=symptom_categories
         )
         
         # Determine outcome based on what was extracted
@@ -314,7 +375,9 @@ class ResponseParserV2:
         expected_field: str,
         field_type: str,
         valid_values: List[str],
-        parse_metadata: Dict[str, Any]
+        parse_metadata: Dict[str, Any],
+        next_questions: Optional[List[Dict[str, Any]]] = None,
+        symptom_categories: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Validate, normalize, and extract fields from LLM output.
@@ -331,10 +394,24 @@ class ResponseParserV2:
             field_type: Type of expected field
             valid_values: Valid values for categorical fields
             parse_metadata: Metadata dict (mutated in place)
+            next_questions: Optional list of upcoming questions (for metadata window)
+            symptom_categories: Optional list of symptom category field names
             
         Returns:
             dict: Extracted fields with normalization applied
         """
+        # Build set of expected field names (fields that should NOT generate warnings)
+        expected_fields = {expected_field}
+        
+        # Add fields from next_questions
+        if next_questions:
+            for nq in next_questions:
+                expected_fields.add(nq['field'])
+        
+        # Add symptom categories
+        if symptom_categories:
+            expected_fields.update(symptom_categories)
+        
         extracted_fields = {}
         
         for key, value in parsed.items():
@@ -342,8 +419,8 @@ class ResponseParserV2:
             if key.startswith('_'):
                 continue
             
-            # Track if this was expected
-            if key != expected_field:
+            # Track if this was expected (only flag unexpected if not in our window)
+            if key not in expected_fields:
                 parse_metadata['unexpected_fields'].append(key)
             
             # Apply normalization if applicable
@@ -377,7 +454,7 @@ class ResponseParserV2:
                         'normalization_type': 'boolean'
                     })
                     logger.debug(
-                        f"Field '{key}': normalized '{original_value}' → {normalized_value}"
+                        f"Field '{key}': normalized '{original_value}' Ã¢â€ â€™ {normalized_value}"
                     )
             
             # Validate categorical values (but still use them - flag warning only)
@@ -430,7 +507,9 @@ class ResponseParserV2:
     def _build_prompt(
         self,
         question: Dict[str, Any],
-        patient_response: str
+        patient_response: str,
+        next_questions: Optional[List[Dict[str, Any]]] = None,
+        symptom_categories: Optional[List[str]] = None
     ) -> str:
         """
         Build extraction prompt for LLM
@@ -440,8 +519,10 @@ class ResponseParserV2:
         builds the content.
         
         Args:
-            question: Question context
+            question: Question context (primary question)
             patient_response: Patient's answer
+            next_questions: Optional list of upcoming questions (metadata window)
+            symptom_categories: Optional list of symptom category field names
             
         Returns:
             str: Plain text prompt (formatting applied by HF client)
@@ -453,6 +534,7 @@ class ResponseParserV2:
         # Base prompt template
         prompt = f"""You are a medical data extractor for ophthalmology consultations.
 
+PRIMARY QUESTION:
 Question asked: "{question_text}"
 Expected field: {field_name}
 Field type: {field_type}
@@ -470,19 +552,44 @@ Field type: {field_type}
             for key, defn in question['definitions'].items():
                 prompt += f"  - {key}: {defn}\n"
         
+        # Add metadata window for next questions
+        if next_questions and len(next_questions) > 0:
+            prompt += "\nADDITIONAL CONTEXT - You may also extract these fields if clearly mentioned:\n"
+            for nq in next_questions:
+                nq_field = nq['field']
+                nq_type = nq.get('field_type', 'text')
+                
+                # Format based on field type
+                if nq_type == 'categorical' and 'valid_values' in nq:
+                    nq_valid = ', '.join(nq['valid_values'])
+                    prompt += f"  - Field: {nq_field}, Type: {nq_type}, Valid values: {nq_valid}\n"
+                else:
+                    prompt += f"  - Field: {nq_field}, Type: {nq_type}\n"
+        
+        # Add symptom categories
+        if symptom_categories and len(symptom_categories) > 0:
+            prompt += "\nSYMPTOM CATEGORIES - You may extract these if patient mentions new symptoms:\n"
+            symptom_list = ', '.join(symptom_categories)
+            prompt += f"  - {symptom_list}\n"
+        
         # Add patient response
         prompt += f"""
 Patient response: "{patient_response}"
 
-Extract the {field_name} field from the patient's response.
+Extract any relevant fields from the patient's response.
 Return ONLY valid JSON in this format:
-{{"{field_name}": "extracted_value"}}
+{{
+  "{field_name}": "value",     # PRIMARY field - focus on this
+  "other_field": "value"       # any additional fields from context
+}}
 
 Rules:
-- If the patient's response clearly contains the information, extract it
-- If unclear or the patient doesn't know, return: {{}}
-- Use the exact field name: {field_name}
-- For categorical fields, you MUST use one of the valid values exactly as listed
+- PRIMARY focus on {field_name}
+- You MAY extract additional fields listed in "ADDITIONAL CONTEXT" if clearly mentioned
+- You MAY extract symptom category fields if patient mentions new symptoms
+- If the patient's response is unclear or doesn't contain information, return: {{}}
+- Use exact field names as listed above
+- For categorical fields, use exact valid values as listed
 - For boolean fields, use true or false (lowercase, no quotes around the boolean)
 """
         
