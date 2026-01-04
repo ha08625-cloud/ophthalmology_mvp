@@ -14,40 +14,34 @@ Design principles:
 - Thin orchestration layer (business logic in specialized modules)
 - Trust Response Parser with retry logic for ambiguity
 - Quarantine unmapped fields in dialogue metadata
+
+Public API:
+- handle(command) -> TurnResult | FinalReport | IllegalCommand
+  ONLY public method. All interaction via commands.
 """
 
 import logging
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 # Flat imports for server testing
 # When copying to local, adjust to: from backend.utils.helpers import ...
-from backend.utils.helpers import generate_consultation_id, generate_consultation_filename
-from backend.utils.episode_classifier import classify_field
+from helpers import generate_consultation_id, generate_consultation_filename
+from episode_classifier import classify_field
+
+# Command and result types
+# When copying to local, adjust to: from backend.commands import ...
+from commands import (
+    ConsultationState,
+    StartConsultation,
+    UserTurn,
+    FinalizeConsultation,
+    Command
+)
+from results import TurnResult, FinalReport, IllegalCommand
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class TurnResult:
-    """
-    Result of processing a single turn
-    
-    Attributes:
-        system_output: Text to show user (question or message)
-        state_snapshot: Canonical consultation state (for persistence, lossless)
-        clinical_output: Clinical projection (for JSON formatter, lossy)
-        debug: Debug information (parser output, errors, etc.)
-        turn_metadata: Turn-level metadata (episode_id, turn_count, etc.)
-        consultation_complete: Whether consultation is finished
-    """
-    system_output: str
-    state_snapshot: Dict[str, Any]  # Canonical, lossless
-    clinical_output: Dict[str, Any]  # Clinical projection, lossy
-    debug: Dict[str, Any]
-    turn_metadata: Dict[str, Any]
-    consultation_complete: bool
 
 
 class DialogueManagerV2:
@@ -56,8 +50,14 @@ class DialogueManagerV2:
     
     Functional core design:
     - Ephemeral per turn (configs cached, state external)
-    - handle_turn() transforms state deterministically
+    - handle(command) transforms state deterministically
     - No implicit state accumulation
+    
+    Public API:
+    - handle(command: Command) -> TurnResult | FinalReport | IllegalCommand
+    
+    Private/internal methods:
+    - All other methods are implementation details
     """
     
     # Commands that trigger early exit
@@ -71,6 +71,12 @@ class DialogueManagerV2:
         'field': 'additional_episodes_present',
         'field_type': 'boolean'
     }
+    
+    # Symptom category fields (gating questions from ruleset)
+    SYMPTOM_CATEGORIES = [
+        'vl_present', 'cp_present', 'vp_present', 'dp_present',
+        'dz_present', 'hall_present', 'h_present', 'ep_present', 'ac_present'
+    ]
     
     def __init__(self, state_manager_class, question_selector, response_parser,
                  json_formatter, summary_generator):
@@ -108,6 +114,9 @@ class DialogueManagerV2:
         self.json_formatter = json_formatter  # Stateless, safe to cache
         self.summary_generator = summary_generator  # Stateless, safe to cache
         
+        # Routing debug tracking (per-turn)
+        self._last_routing_info: List[tuple] = []
+        
         logger.info("Dialogue Manager V2 initialized (functional core)")
     
     def _validate_modules(self, state_manager_class, question_selector, response_parser,
@@ -141,71 +150,226 @@ class DialogueManagerV2:
                 callable(getattr(summary_generator, 'generate', None))):
             raise TypeError("summary_generator must have callable generate() method")
     
-    def handle_turn(
+    # =========================================================================
+    # PUBLIC API - Command Handler
+    # =========================================================================
+    
+    def handle(self, command: Command) -> TurnResult | FinalReport | IllegalCommand:
+        """
+        ONLY public method. All interaction via commands.
+        
+        Validates command legality, routes to appropriate handler.
+        
+        Args:
+            command: One of StartConsultation, UserTurn, FinalizeConsultation
+            
+        Returns:
+            TurnResult: For StartConsultation, UserTurn
+            FinalReport: For FinalizeConsultation
+            IllegalCommand: If command invalid or illegal lifecycle transition
+            
+        Examples:
+            >>> dm = DialogueManagerV2(...)
+            >>> result = dm.handle(StartConsultation())
+            >>> result = dm.handle(UserTurn("My vision is blurry", result.state))
+            >>> report = dm.handle(FinalizeConsultation(result.state))
+        """
+        if isinstance(command, StartConsultation):
+            return self._handle_start()
+        
+        elif isinstance(command, UserTurn):
+            return self._handle_user_turn(command)
+        
+        elif isinstance(command, FinalizeConsultation):
+            return self._handle_finalize(command)
+        
+        else:
+            return IllegalCommand(
+                reason=f"Unknown command type: {type(command).__name__}",
+                command_type=type(command).__name__
+            )
+    
+    # =========================================================================
+    # COMMAND HANDLERS (Internal)
+    # =========================================================================
+    
+    def _handle_start(self) -> TurnResult:
+        """
+        Handle StartConsultation command.
+        
+        Creates initial state, returns first question.
+        
+        Returns:
+            TurnResult with first question + initial state
+        """
+        # Initialize new consultation
+        state_manager, turn_count, current_episode_id, consultation_id = \
+            self._initialize_new_consultation()
+        
+        # Get first question
+        episode_data = state_manager.get_episode_for_selector(current_episode_id)
+        question_dict = self.selector.get_next_question(episode_data)
+        
+        if question_dict is None:
+            # Shouldn't happen on first turn, but handle gracefully
+            logger.error("No questions available on first turn")
+            
+            # Build minimal state for error case
+            canonical_snapshot = state_manager.snapshot_state()
+            canonical_snapshot['consultation_id'] = consultation_id
+            canonical_snapshot['turn_count'] = turn_count
+            canonical_snapshot['current_episode_id'] = current_episode_id
+            canonical_snapshot['awaiting_first_question'] = False
+            canonical_snapshot['awaiting_episode_transition'] = False
+            canonical_snapshot['pending_question'] = None
+            canonical_snapshot['errors'] = []
+            canonical_snapshot['consultation_complete'] = True
+            
+            state = ConsultationState.from_json(canonical_snapshot)
+            
+            return TurnResult(
+                system_output="Error: No questions configured",
+                state=state,
+                debug={'error': 'no_questions'},
+                turn_metadata={'turn_count': turn_count, 'consultation_id': consultation_id},
+                consultation_complete=True
+            )
+        
+        # Build canonical snapshot
+        canonical_snapshot = state_manager.snapshot_state()
+        canonical_snapshot['consultation_id'] = consultation_id
+        canonical_snapshot['turn_count'] = turn_count + 1  # First question is turn 1
+        canonical_snapshot['current_episode_id'] = current_episode_id
+        canonical_snapshot['awaiting_first_question'] = False
+        canonical_snapshot['awaiting_episode_transition'] = False
+        canonical_snapshot['pending_question'] = question_dict
+        canonical_snapshot['errors'] = []
+        canonical_snapshot['consultation_complete'] = False
+        
+        # Wrap in opaque envelope
+        state = ConsultationState.from_json(canonical_snapshot)
+        
+        logger.info(f"Started consultation {consultation_id}")
+        
+        return TurnResult(
+            system_output=question_dict['question'],
+            state=state,
+            debug={'first_question': True},
+            turn_metadata={
+                'turn_count': turn_count + 1,
+                'consultation_id': consultation_id,
+                'episode_id': current_episode_id
+            },
+            consultation_complete=False
+        )
+    
+    def _handle_user_turn(self, command: UserTurn) -> TurnResult | IllegalCommand:
+        """
+        Handle UserTurn command.
+        
+        Processes user input, updates state, returns next question.
+        
+        Args:
+            command: UserTurn with user_input and state
+            
+        Returns:
+            TurnResult with next question + updated state
+            IllegalCommand if state invalid
+        """
+        # Extract canonical dict from opaque envelope
+        # DialogueManager is allowed to inspect (StateManager owner)
+        state_snapshot = command.state.to_json()
+        
+        # Validate basic structure
+        if 'consultation_id' not in state_snapshot:
+            return IllegalCommand(
+                reason="State missing consultation_id - invalid state",
+                command_type="UserTurn"
+            )
+        
+        # Delegate to internal turn handler
+        return self._handle_turn_impl(command.user_input, state_snapshot)
+    
+    def _handle_finalize(self, command: FinalizeConsultation) -> FinalReport | IllegalCommand:
+        """
+        Handle FinalizeConsultation command.
+        
+        Generates JSON + summary outputs.
+        
+        Args:
+            command: FinalizeConsultation with state
+            
+        Returns:
+            FinalReport with file paths
+            IllegalCommand if consultation not complete
+        """
+        # Extract state
+        state_snapshot = command.state.to_json()
+        
+        # Validate consultation is actually complete
+        if not state_snapshot.get('consultation_complete', False):
+            return IllegalCommand(
+                reason="Cannot finalize: consultation not complete",
+                command_type="FinalizeConsultation"
+            )
+        
+        # Call existing generate_outputs logic
+        outputs = self.generate_outputs(
+            state_snapshot=state_snapshot,
+            output_dir="outputs/consultations"
+        )
+        
+        logger.info(f"Finalized consultation {outputs['consultation_id']}")
+        
+        return FinalReport(
+            json_path=outputs['json_path'],
+            summary_path=outputs['summary_path'],
+            json_filename=outputs['json_filename'],
+            summary_filename=outputs['summary_filename'],
+            consultation_id=outputs['consultation_id'],
+            total_episodes=outputs['total_episodes']
+        )
+    
+    # =========================================================================
+    # INTERNAL - Turn processing implementation
+    # =========================================================================
+    
+    def _handle_turn_impl(
         self,
         user_input: str,
-        state_snapshot: Optional[Dict[str, Any]] = None
+        state_snapshot: Dict[str, Any]
     ) -> TurnResult:
         """
-        Process a single turn of conversation
+        Internal turn processing implementation.
         
-        Functional core contract:
-        - Input: user text + canonical state snapshot
-        - Output: system response + updated canonical snapshot + clinical view
-        - No side effects (logging excepted)
-        
-        Canonical state structure (lossless, for persistence):
-        {
-            'episodes': [...],  # All episodes, with operational fields
-            'shared_data': {...},
-            'dialogue_history': {episode_id: [turns]}
-        }
+        Called by _handle_user_turn after state validation.
         
         Args:
             user_input: Patient's response text
-            state_snapshot: Canonical state (from snapshot_state(), or None for first turn)
+            state_snapshot: Canonical state dict (validated, non-None)
             
         Returns:
-            TurnResult with:
-            - system_output: Question or message to display
-            - state_snapshot: Updated canonical state (pass to next turn)
-            - clinical_output: Clinical projection (for JSON formatter)
-            - debug: Parser output and error info
-            - turn_metadata: episode_id, turn_count, etc.
-            - consultation_complete: Whether consultation is done
-            
-        Raises:
-            ValueError: If state is malformed or turn_count invalid
+            TurnResult with updated state wrapped in ConsultationState
         """
-        # Initialize or restore state
-        if state_snapshot is None:
-            # First turn - initialize new consultation
-            state_manager, turn_count, current_episode_id, consultation_id = self._initialize_new_consultation()
-            expected_turn = 0
-            awaiting_first_question = True
-            awaiting_episode_transition = False
-            pending_question = None
-            errors = []
-        else:
-            # Restore from canonical snapshot
-            state_manager = self.state_manager_class.from_snapshot(
-                state_snapshot,
-                data_model_path="data/clinical_data_model.json"
-            )
-            
-            # Extract turn-level state (not stored in StateManager)
-            turn_count = state_snapshot.get('turn_count', 0)
-            current_episode_id = state_snapshot.get('current_episode_id')
-            consultation_id = state_snapshot.get('consultation_id')
-            awaiting_first_question = state_snapshot.get('awaiting_first_question', False)
-            awaiting_episode_transition = state_snapshot.get('awaiting_episode_transition', False)
-            pending_question = state_snapshot.get('pending_question')
-            errors = state_snapshot.get('errors', [])
-            
-            if turn_count < 0:
-                raise ValueError("state_snapshot missing or invalid turn_count")
-            
-            expected_turn = turn_count
+        # Restore from canonical snapshot
+        state_manager = self.state_manager_class.from_snapshot(
+            state_snapshot,
+            data_model_path="data/clinical_data_model.json"
+        )
+        
+        # Extract turn-level state (not stored in StateManager)
+        turn_count = state_snapshot.get('turn_count', 0)
+        current_episode_id = state_snapshot.get('current_episode_id')
+        consultation_id = state_snapshot.get('consultation_id')
+        awaiting_first_question = state_snapshot.get('awaiting_first_question', False)
+        awaiting_episode_transition = state_snapshot.get('awaiting_episode_transition', False)
+        pending_question = state_snapshot.get('pending_question')
+        errors = state_snapshot.get('errors', [])
+        
+        if turn_count < 0:
+            raise ValueError("state_snapshot has invalid turn_count")
+        
+        expected_turn = turn_count
         
         # Check for exit command
         if user_input.strip().lower() in self.EXIT_COMMANDS:
@@ -293,10 +457,10 @@ class DialogueManagerV2:
         consultation_complete: bool
     ) -> TurnResult:
         """
-        Build TurnResult with both canonical snapshot and clinical projection
+        Build TurnResult with opaque ConsultationState and enhanced debug.
         
-        This enforces the separation: canonical state for persistence,
-        clinical view for output only.
+        The state is wrapped in ConsultationState envelope - Flask cannot inspect it.
+        Routing debug is added to debug dict.
         """
         # Get canonical snapshot (lossless, for persistence)
         canonical_snapshot = state_manager.snapshot_state()
@@ -309,14 +473,19 @@ class DialogueManagerV2:
         canonical_snapshot['awaiting_episode_transition'] = awaiting_episode_transition
         canonical_snapshot['pending_question'] = pending_question
         canonical_snapshot['errors'] = errors
+        canonical_snapshot['consultation_complete'] = consultation_complete
         
-        # Get clinical projection (lossy, for output)
-        clinical_view = state_manager.export_clinical_view()
+        # Build routing debug and add to debug dict
+        routing_debug = self._build_routing_debug()
+        if routing_debug:  # Only add if we have routing info
+            debug['routing'] = routing_debug
+        
+        # Wrap state in opaque envelope
+        state = ConsultationState.from_json(canonical_snapshot)
         
         return TurnResult(
             system_output=system_output,
-            state_snapshot=canonical_snapshot,
-            clinical_output=clinical_view,
+            state=state,  # Opaque! Flask cannot inspect.
             debug=debug,
             turn_metadata={
                 'turn_count': turn_count,
@@ -411,12 +580,20 @@ class DialogueManagerV2:
         if pending_question is None:
             raise ValueError("No pending question in state")
         
-        # Parse response
+        # Get next questions for multi-question metadata window
+        next_questions = self.selector.get_next_n_questions(
+            current_question_id=pending_question['id'],
+            n=3
+        )
+        
+        # Parse response with extended metadata
         try:
             parse_result = self.parser.parse(
                 question=pending_question,
                 patient_response=user_input,
-                turn_id=f"turn_{turn_count + 1:03d}"
+                turn_id=f"turn_{turn_count + 1:03d}",
+                next_questions=next_questions,
+                symptom_categories=self.SYMPTOM_CATEGORIES
             )
             
             outcome = parse_result['outcome']
@@ -547,12 +724,14 @@ class DialogueManagerV2:
         Returns:
             TurnResult with new episode question or finalization
         """
-        # Parse transition response
+        # Parse transition response (no next_questions for meta-question)
         try:
             parse_result = self.parser.parse(
                 question=self.TRANSITION_QUESTION,
                 patient_response=user_input,
-                turn_id=f"turn_{turn_count + 1:03d}"
+                turn_id=f"turn_{turn_count + 1:03d}",
+                next_questions=None,
+                symptom_categories=self.SYMPTOM_CATEGORIES
             )
             
             outcome = parse_result['outcome']
@@ -643,14 +822,23 @@ class DialogueManagerV2:
         extracted: Dict[str, Any],
         state_manager
     ) -> Dict[str, Any]:
-        """Route extracted fields to episode or shared storage"""
+        """
+        Route extracted fields to episode or shared storage.
+        
+        Now captures routing decisions with episode_id for debug panel.
+        """
         unmapped = {}
+        routing_info = []  # Capture for debug
         
         for field_name, value in extracted.items():
             if field_name.startswith('_'):
                 continue
             
             classification = classify_field(field_name)
+            
+            # Capture routing decision for debug (include episode_id if episode field)
+            captured_episode_id = episode_id if classification == 'episode' else None
+            routing_info.append((field_name, value, classification, captured_episode_id))
             
             if classification == 'episode':
                 try:
@@ -669,6 +857,9 @@ class DialogueManagerV2:
             else:
                 unmapped[field_name] = value
                 logger.warning(f"Unmapped field: {field_name} = {value}")
+        
+        # Store for debug builder
+        self._last_routing_info = routing_info
         
         return unmapped
     
@@ -706,6 +897,55 @@ class DialogueManagerV2:
                     
         except Exception as e:
             logger.error(f"Block completion check failed: {e}")
+    
+    def _build_routing_debug(self) -> list:
+        """
+        Build routing debug information from last turn.
+        
+        Returns routing decisions for debug panel display.
+        
+        Returns:
+            list: Routing info dicts with field, value, resolution, episode_id, rule, recognized
+        """
+        # Import classifier data (flat imports for server)
+        from episode_classifier import EPISODE_PREFIXES, SHARED_PREFIXES, COLLECTION_FIELDS
+        
+        routing_debug = []
+        
+        for field_name, value, classification, episode_id in self._last_routing_info:
+            # Determine rule that matched
+            if classification == 'episode':
+                # Find which prefix matched
+                matching_prefix = next(
+                    (p for p in EPISODE_PREFIXES if field_name.startswith(p)),
+                    'unknown'
+                )
+                rule = f"prefix:{matching_prefix}"
+                
+            elif classification == 'shared':
+                # Check if it's a collection
+                if field_name in COLLECTION_FIELDS:
+                    rule = "collection"
+                else:
+                    # Find which prefix matched
+                    matching_prefix = next(
+                        (p for p in SHARED_PREFIXES if field_name.startswith(p)),
+                        'unknown'
+                    )
+                    rule = f"prefix:{matching_prefix}"
+            else:
+                rule = "unknown"
+            
+            routing_debug.append({
+                "field": field_name,
+                "value": str(value)[:50],  # Truncate long values
+                "resolution": classification,
+                "episode_id": episode_id,
+                "rule": rule,
+                "recognized": classification != 'unknown'
+            })
+        
+        return routing_debug
     
     def generate_outputs(
         self,
@@ -750,8 +990,9 @@ class DialogueManagerV2:
         )
         json_path = os.path.join(output_dir, json_filename)
         
-        from backend.core.json_formatter_v2 import JSONFormatterV2
-        JSONFormatterV2.save_to_file(json_data, json_path)
+        # Use class method from already-cached formatter
+        # (self.json_formatter is JSONFormatterV2 instance)
+        self.json_formatter.save_to_file(json_data, json_path)
         
         # Generate summary
         summary_data = state_manager.export_for_summary()
