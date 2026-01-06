@@ -73,12 +73,6 @@ class DialogueManagerV2:
         'field_type': 'boolean'
     }
     
-    # Symptom category fields (gating questions from ruleset)
-    SYMPTOM_CATEGORIES = [
-        'vl_present', 'cp_present', 'vp_present', 'dp_present',
-        'dz_present', 'hall_present', 'h_present', 'ep_present', 'ac_present'
-    ]
-    
     def __init__(self, state_manager_class, question_selector, response_parser,
                  json_formatter, summary_generator):
         """
@@ -115,10 +109,13 @@ class DialogueManagerV2:
         self.json_formatter = json_formatter  # Stateless, safe to cache
         self.summary_generator = summary_generator  # Stateless, safe to cache
         
+        # Extract symptom categories from ruleset (cached at init)
+        self.symptom_categories = self._extract_symptom_categories(question_selector)
+        
         # Routing debug tracking (per-turn)
         self._last_routing_info: List[tuple] = []
         
-        logger.info("Dialogue Manager V2 initialized (functional core)")
+        logger.info(f"Dialogue Manager V2 initialized (functional core, {len(self.symptom_categories)} symptom categories)")
     
     def _validate_modules(self, state_manager_class, question_selector, response_parser,
                          json_formatter, summary_generator):
@@ -150,6 +147,67 @@ class DialogueManagerV2:
         if not (hasattr(summary_generator, 'generate') and 
                 callable(getattr(summary_generator, 'generate', None))):
             raise TypeError("summary_generator must have callable generate() method")
+    
+    def _extract_symptom_categories(self, question_selector) -> List[str]:
+        """
+        Extract symptom category field names from ruleset gating questions.
+        
+        Pulls clinical metadata from QuestionSelector at initialization time.
+        Cached as instance variable - no runtime overhead.
+        
+        Args:
+            question_selector: QuestionSelectorV2 instance with loaded ruleset
+            
+        Returns:
+            list: Symptom category field names (e.g., ['vl_present', 'cp_present', ...])
+            
+        Raises:
+            ValueError: If ruleset structure is invalid or gating questions missing
+            
+        Examples:
+            >>> symptom_categories = self._extract_symptom_categories(selector)
+            >>> # ['vl_present', 'cp_present', 'vp_present', ...]
+        """
+        # Fail fast: Check selector has ruleset attribute
+        if not hasattr(question_selector, 'sections'):
+            raise ValueError(
+                "QuestionSelector missing 'sections' attribute. "
+                "Cannot extract symptom categories without ruleset."
+            )
+        
+        sections = question_selector.sections
+        
+        # Fail fast: Check gating_questions section exists
+        if 'gating_questions' not in sections:
+            raise ValueError(
+                "Ruleset missing 'sections.gating_questions'. "
+                "Cannot extract symptom categories."
+            )
+        
+        gating_questions = sections['gating_questions']
+        
+        # Fail fast: Check gating_questions is not empty
+        if not gating_questions:
+            raise ValueError(
+                "Ruleset 'sections.gating_questions' is empty. "
+                "Expected at least one gating question."
+            )
+        
+        # Extract field names from gating questions
+        symptom_fields = []
+        for question in gating_questions:
+            if 'field' in question:
+                symptom_fields.append(question['field'])
+        
+        # Fail fast: Check we extracted at least one field
+        if not symptom_fields:
+            raise ValueError(
+                f"Ruleset 'sections.gating_questions' has {len(gating_questions)} questions "
+                "but none have 'field' attributes. Cannot extract symptom categories."
+            )
+        
+        logger.info(f"Extracted {len(symptom_fields)} symptom categories from ruleset")
+        return symptom_fields
     
     # =========================================================================
     # CONVERSATION MODE MANAGEMENT (V3)
@@ -699,7 +757,7 @@ class DialogueManagerV2:
                 patient_response=user_input,
                 turn_id=f"turn_{turn_count + 1:03d}",
                 next_questions=next_questions,
-                symptom_categories=self.SYMPTOM_CATEGORIES
+                symptom_categories=self.symptom_categories
             )
             
             outcome = parse_result['outcome']
@@ -841,7 +899,7 @@ class DialogueManagerV2:
                 patient_response=user_input,
                 turn_id=f"turn_{turn_count + 1:03d}",
                 next_questions=None,
-                symptom_categories=self.SYMPTOM_CATEGORIES
+                symptom_categories=self.symptom_categories
             )
             
             outcome = parse_result['outcome']
