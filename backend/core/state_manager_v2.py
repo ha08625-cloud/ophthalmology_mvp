@@ -34,12 +34,119 @@ from typing import List, Dict, Any, Optional
 import json
 from pathlib import Path
 from datetime import datetime, timezone
+from enum import Enum
+from dataclasses import dataclass, field
 
 # Flat imports for server testing
 # When copying to local, adjust to: from backend.conversation_modes import ...
 from conversation_modes import ConversationMode, VALID_MODES
 
 logger = logging.getLogger(__name__)
+
+
+# ========================
+# Clarification Models
+# ========================
+
+class ClarificationResolution(str, Enum):
+    """
+    Outcome of clarification phase.
+    
+    This enum represents the outcome of ambiguity resolution,
+    not clinical truth or episode identity.
+    
+    Values:
+        CONFIRMED: User confirmed episode hypothesis
+        NEGATED: User denied episode hypothesis
+        FORCED: System applied forced resolution policy
+        UNRESOLVABLE: Ambiguity could not be resolved
+    """
+    CONFIRMED = "confirmed"
+    NEGATED = "negated"
+    FORCED = "forced"
+    UNRESOLVABLE = "unresolvable"
+
+
+@dataclass(frozen=True)
+class ClarificationTurn:
+    """
+    Single turn in clarification transcript.
+    
+    Immutable snapshot of (question, response, replayability) at time of asking.
+    The replayable flag is denormalized from template registry to ensure
+    replay semantics remain stable across template changes.
+    
+    Fields:
+        template_id: ID of clarification question template
+        user_text: Raw user response (verbatim)
+        replayable: Whether this turn is eligible for Response Parser replay
+    """
+    template_id: str
+    user_text: str
+    replayable: bool
+    
+    def __post_init__(self):
+        """Validate fields after initialization"""
+        if not self.user_text or not self.user_text.strip():
+            raise ValueError("user_text cannot be empty")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for serialization"""
+        return {
+            'template_id': self.template_id,
+            'user_text': self.user_text,
+            'replayable': self.replayable
+        }
+
+
+@dataclass
+class ClarificationContext:
+    """
+    Clarification phase context.
+    
+    This object exists only during MODE_CLARIFICATION.
+    It is created on mode entry and cleared on mode exit.
+    
+    Fields:
+        transcript: Ordered list of clarification turns
+        entry_count: Number of turns in transcript (redundant but useful for logging)
+        resolution_status: Outcome of clarification (None until resolved)
+    """
+    transcript: List[ClarificationTurn] = field(default_factory=list)
+    entry_count: int = 0
+    resolution_status: Optional[ClarificationResolution] = None
+    
+    def __post_init__(self):
+        """Validate entry_count matches transcript length"""
+        if self.entry_count != len(self.transcript):
+            raise ValueError(
+                f"entry_count ({self.entry_count}) does not match "
+                f"transcript length ({len(self.transcript)})"
+            )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for serialization"""
+        return {
+            'transcript': [turn.to_dict() for turn in self.transcript],
+            'entry_count': self.entry_count,
+            'resolution_status': self.resolution_status.value if self.resolution_status else None
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ClarificationContext':
+        """Reconstruct from dict"""
+        transcript = [
+            ClarificationTurn(**turn_data)
+            for turn_data in data.get('transcript', [])
+        ]
+        resolution_str = data.get('resolution_status')
+        resolution = ClarificationResolution(resolution_str) if resolution_str else None
+        
+        return cls(
+            transcript=transcript,
+            entry_count=data.get('entry_count', 0),
+            resolution_status=resolution
+        )
 
 
 class StateManagerV2:
@@ -80,6 +187,9 @@ class StateManagerV2:
         self.episodes: List[Dict[str, Any]] = []
         self.shared_data: Dict[str, Any] = self._deep_copy(self.data_model["shared_data_template"])
         self.dialogue_history: Dict[int, List[Dict[str, Any]]] = {}
+        
+        # Clarification context (only exists during MODE_CLARIFICATION)
+        self.clarification_context: Optional[ClarificationContext] = None
         
         # Conversation mode (placeholder for new instances)
         # CRITICAL: This default is overridden by from_snapshot() during rehydration.
@@ -182,6 +292,163 @@ class StateManagerV2:
                 result[key] = self._deep_copy(value)
         
         return result
+    
+    # ========================
+    # Clarification Buffer Management
+    # ========================
+    
+    def init_clarification_context(self) -> None:
+        """
+        Initialize clarification context on entry to MODE_CLARIFICATION.
+        
+        Creates empty ClarificationContext.
+        
+        Raises:
+            RuntimeError: If clarification context already exists
+            
+        Example:
+            state.init_clarification_context()
+            assert state.clarification_context is not None
+            assert state.clarification_context.entry_count == 0
+        """
+        if self.clarification_context is not None:
+            raise RuntimeError(
+                "Clarification context already exists. "
+                "Must clear before re-initializing."
+            )
+        
+        self.clarification_context = ClarificationContext()
+        logger.info("Clarification context initialized")
+    
+    def append_clarification_turn(
+        self,
+        template_id: str,
+        user_text: str,
+        replayable: bool
+    ) -> None:
+        """
+        Append turn to clarification transcript.
+        
+        This method snapshots the turn at time of asking.
+        The replayable flag is denormalized from the template registry
+        to ensure stability across template changes.
+        
+        Args:
+            template_id: Clarification question template ID
+            user_text: Verbatim user response
+            replayable: Whether turn is eligible for replay
+            
+        Raises:
+            RuntimeError: If clarification context not initialized
+            ValueError: If validation fails (empty user_text, etc.)
+            
+        Example:
+            state.append_clarification_turn(
+                template_id="clarify_location",
+                user_text="It was in my left eye",
+                replayable=True
+            )
+        """
+        if self.clarification_context is None:
+            raise RuntimeError(
+                "Cannot append turn: clarification context not initialized. "
+                "Call init_clarification_context() first."
+            )
+        
+        # Create immutable turn (dataclass validates in __post_init__)
+        turn = ClarificationTurn(
+            template_id=template_id,
+            user_text=user_text,
+            replayable=replayable
+        )
+        
+        # Append to transcript and sync entry_count
+        self.clarification_context.transcript.append(turn)
+        self.clarification_context.entry_count = len(self.clarification_context.transcript)
+        
+        logger.debug(
+            f"Appended clarification turn: template={template_id}, "
+            f"replayable={replayable}, entry_count={self.clarification_context.entry_count}"
+        )
+    
+    def clear_clarification_context(self) -> None:
+        """
+        Clear clarification context on exit from MODE_CLARIFICATION.
+        
+        This is an atomic operation - context is either present or None.
+        Always call this on mode exit, regardless of resolution outcome.
+        
+        Example:
+            # After resolution
+            state.clear_clarification_context()
+            assert state.clarification_context is None
+        """
+        if self.clarification_context is None:
+            logger.warning("clear_clarification_context() called but context already None")
+            return
+        
+        entry_count = self.clarification_context.entry_count
+        self.clarification_context = None
+        logger.info(f"Clarification context cleared ({entry_count} turns discarded)")
+    
+    def get_clarification_transcript(self) -> List[ClarificationTurn]:
+        """
+        Get immutable copy of clarification transcript.
+        
+        Returns complete transcript, regardless of replayability.
+        Caller is responsible for filtering by replayable flag if needed.
+        
+        Returns:
+            List[ClarificationTurn]: Ordered transcript (may be empty)
+            
+        Raises:
+            RuntimeError: If clarification context not initialized
+            
+        Example:
+            # Get all turns
+            turns = state.get_clarification_transcript()
+            
+            # Filter replayable only (caller's responsibility)
+            replayable_turns = [t for t in turns if t.replayable]
+        """
+        if self.clarification_context is None:
+            raise RuntimeError(
+                "Cannot get transcript: clarification context not initialized"
+            )
+        
+        # Return shallow copy (turns are immutable so this is safe)
+        return list(self.clarification_context.transcript)
+    
+    def set_clarification_resolution(self, resolution: ClarificationResolution) -> None:
+        """
+        Set resolution status of clarification phase.
+        
+        This records the outcome but does not trigger mode transition
+        or buffer clearing - those are DialogueManager's responsibility.
+        
+        Args:
+            resolution: Resolution outcome
+            
+        Raises:
+            RuntimeError: If clarification context not initialized
+            ValueError: If resolution already set
+            
+        Example:
+            state.set_clarification_resolution(ClarificationResolution.CONFIRMED)
+        """
+        if self.clarification_context is None:
+            raise RuntimeError(
+                "Cannot set resolution: clarification context not initialized"
+            )
+        
+        if self.clarification_context.resolution_status is not None:
+            raise ValueError(
+                f"Resolution already set to {self.clarification_context.resolution_status}. "
+                "Cannot change resolution once set."
+            )
+        
+        self.clarification_context.resolution_status = resolution
+        logger.info(f"Clarification resolution set: {resolution.value}")
     
     # ========================
     # Episode Management
@@ -611,11 +878,17 @@ class StateManagerV2:
             for ep in self.episodes
         ]
         
+        # Serialize clarification context if present
+        clarification_context_dict = None
+        if self.clarification_context is not None:
+            clarification_context_dict = self.clarification_context.to_dict()
+        
         return {
             'episodes': serializable_episodes,
             'shared_data': self._deep_copy(self.shared_data),
             'dialogue_history': self._deep_copy(self.dialogue_history),
-            'conversation_mode': self.conversation_mode  # V3: Explicit mode tracking
+            'conversation_mode': self.conversation_mode,  # V3: Explicit mode tracking
+            'clarification_context': clarification_context_dict  # V3: Clarification buffer
         }
     
     @classmethod
@@ -679,6 +952,11 @@ class StateManagerV2:
         mode = snapshot.get('conversation_mode', ConversationMode.MODE_EPISODE_EXTRACTION.value)
         state_manager._validate_conversation_mode(mode)
         state_manager.conversation_mode = mode
+        
+        # Restore clarification context if present (V3)
+        clarification_data = snapshot.get('clarification_context')
+        if clarification_data is not None:
+            state_manager.clarification_context = ClarificationContext.from_dict(clarification_data)
         
         logger.info(f"Rehydrated StateManager: {len(episodes)} episodes, mode={mode}")
         return state_manager
