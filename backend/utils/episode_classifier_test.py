@@ -33,8 +33,6 @@ EPISODE_PREFIXES = {
     'h_',    # headache
     'ac_',   # appearance changes
     'hc_',   # healthcare contacts
-    'os_',   # other symptoms
-    'func_', # functional impact
     'b1_',   # follow-up block 1
     'b6_',   # follow-up block 6
 }
@@ -51,9 +49,7 @@ SHARED_PREFIXES = {
 # Item fields inside these arrays use local names (e.g., 'name', not 'med_name')
 COLLECTION_FIELDS = {
     'medications',
-    'past_medical_history',
-    'family_history',
-    'allergies'
+    'past_medical_history'
 }
 
 # Strict mode: whether to raise ValueError on unknown fields
