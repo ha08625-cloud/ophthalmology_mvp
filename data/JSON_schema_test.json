@@ -248,22 +248,6 @@
           }
         },
         
-        "other_symptoms": {
-          "other_symptoms": {
-            "type": "text",
-            "required": false,
-            "description": "Other symptoms associated with this episode"
-          }
-        },
-        
-        "functional_impact": {
-          "functional_impact": {
-            "type": "text",
-            "required": true,
-            "description": "How this episode affects daily life"
-          }
-        },
-        
         "follow_up_blocks": {
           "description": "Triggered follow-up question blocks for this episode",
           "block_1": {
@@ -341,24 +325,6 @@
       }
     },
     
-    "family_history": {
-      "type": "array",
-      "description": "Family history of relevant conditions",
-      "items": {
-        "condition": {"type": "text"},
-        "relationship": {"type": "text"}
-      }
-    },
-    
-    "allergies": {
-      "type": "array",
-      "description": "Known allergies",
-      "items": {
-        "allergen": {"type": "text"},
-        "reaction": {"type": "text"}
-      }
-    },
-    
     "social_history": {
       "description": "Social history with nested structure",
       "smoking": {
@@ -370,31 +336,6 @@
         "pack_years": {
           "type": "integer",
           "description": "Pack-years if former or current smoker"
-        }
-      },
-      "alcohol": {
-        "units_per_week": {
-          "type": "integer",
-          "description": "Units of alcohol per week"
-        },
-        "type": {
-          "type": "text",
-          "description": "Type of alcohol consumed"
-        }
-      },
-      "illicit_drugs": {
-        "status": {
-          "type": "categorical",
-          "valid_values": ["never", "current", "former"],
-          "description": "Illicit drug use status"
-        },
-        "type": {
-          "type": "text",
-          "description": "Type of drugs used"
-        },
-        "frequency": {
-          "type": "text",
-          "description": "Frequency of use"
         }
       },
       "occupation": {
@@ -416,27 +357,7 @@
         "chills_details": {"type": "text"},
         "fevers": {"type": "boolean"},
         "fever_details": {"type": "text"},
-        "night_sweats": {"type": "boolean"},
-        "night_sweats_details": {"type": "text"},
-        "fatigue": {"type": "boolean"},
-        "fatigue_details": {"type": "text"},
-        "appetite_or_weight_change": {"type": "boolean"},
-        "appetite_weight_details": {"type": "text"},
-        "lumps": {"type": "boolean"},
-        "lumps_details": {"type": "text"},
-        "unwell": {"type": "boolean"},
-        "unwell_details": {"type": "text"}
       },
-      "neurological": {"type": "object", "description": "Placeholder - to be populated"},
-      "ear_nose_throat": {"type": "object", "description": "Placeholder - to be populated"},
-      "skin": {"type": "object", "description": "Placeholder - to be populated"},
-      "respiratory": {"type": "object", "description": "Placeholder - to be populated"},
-      "cardiovascular": {"type": "object", "description": "Placeholder - to be populated"},
-      "blood": {"type": "object", "description": "Placeholder - to be populated"},
-      "gastrointestinal": {"type": "object", "description": "Placeholder - to be populated"},
-      "musculoskeletal": {"type": "object", "description": "Placeholder - to be populated"},
-      "genitourinary": {"type": "object", "description": "Placeholder - to be populated"},
-      "other": {"type": "object", "description": "Placeholder - to be populated"}
     }
   },
   
