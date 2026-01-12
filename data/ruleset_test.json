@@ -245,25 +245,6 @@
         "field_type": "text",
         "comment": "Response Parser will separate investigations from treatments"
       }
-    ],
-    "other_symptoms": [
-      {
-        "id": "os_1",
-        "type": "probe",
-        "question": "Any other associated symptoms that you haven't mentioned?",
-        "field": "other_symptoms",
-        "field_type": "text"
-      }
-    ],
-    "functional_impact": [
-      {
-        "id": "fi_1",
-        "type": "probe",
-        "question": "How has this episode affected you?",
-        "field": "functional_impact",
-        "field_type": "text",
-        "comment": "Impact on daily activities, work, driving, etc."
-      }
     ]
   },
   
