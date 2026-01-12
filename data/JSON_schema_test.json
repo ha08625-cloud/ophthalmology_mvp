@@ -1,0 +1,455 @@
+{
+  "schema_version": "2.1.0-multi-episode",
+  "description": "Multi-episode ophthalmology consultation schema with episode array and shared data. Updated to match State Manager V2 output.",
+  
+  "metadata": {
+    "consultation_id": {"type": "string", "required": true},
+    "generated_at": {"type": "string", "format": "iso8601", "required": true},
+    "schema_version": {"type": "string", "required": true},
+    "total_episodes": {"type": "integer", "required": true}
+  },
+  
+  "episodes": {
+    "type": "array",
+    "description": "Array of symptom episodes, each representing a distinct clinical presentation. Episodes with no clinical data (only metadata) are excluded from export.",
+    "items": {
+      "type": "object",
+      "properties": {
+        "episode_id": {
+          "type": "integer",
+          "required": true,
+          "description": "Unique identifier for this episode (1, 2, 3, ...). 1-indexed, strictly increasing, no gaps in exported array."
+        },
+        "timestamp_started": {
+          "type": "string",
+          "format": "iso8601",
+          "required": true,
+          "description": "ISO 8601 timestamp when episode was created (UTC)"
+        },
+        "timestamp_last_updated": {
+          "type": "string",
+          "format": "iso8601",
+          "required": true,
+          "description": "ISO 8601 timestamp when episode was last modified (UTC)"
+        },
+        
+        "vision_loss": {
+          "vl_present": {
+            "type": "boolean",
+            "required": true,
+            "description": "Is vision loss present in this episode?"
+          },
+          "vl_single_eye": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["single", "both"]
+          },
+          "vl_laterality": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["left", "right"],
+            "description": "Which eye is affected (only asked if vl_single_eye is 'single')"
+          },
+          "vl_onset_simultaneity": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["simultaneous", "sequential"],
+            "description": "If binocular, were both eyes affected simultaneously?"
+          },
+          "vl_field": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Which part of visual field is affected"
+          },
+          "vl_degree": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["partial", "total"]
+          },
+          "vl_acuity_description": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Detailed acuity description"
+          },
+          "vl_first_onset": {
+            "type": "text",
+            "required": "conditional",
+            "description": "When vision loss first appeared (for recurrent patterns)"
+          },
+          "vl_onset_speed": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["acute", "subacute", "chronic"],
+            "definitions": {
+              "acute": "seconds to minutes",
+              "subacute": "hours to days", 
+              "chronic": "weeks or longer"
+            }
+          },
+          "vl_temporal_pattern": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["permanent", "transient", "intermittent"],
+            "description": "Overall temporal pattern of vision loss"
+          },
+          "vl_flareup_usual_duration": {
+            "type": "text",
+            "required": "conditional",
+            "description": "How long each flare-up typically lasts (for intermittent patterns)"
+          },
+          "vl_flareup_frequency": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Time between flare-ups (for intermittent patterns)"
+          },
+          "vl_interval_visual_loss": {
+            "type": "Boolean",
+            "required": "conditional",
+            "description": "Whether there is still visual loss between flare-ups"
+          },
+          "vl_interval_acuity": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Acuity during the intervals"
+          },
+          "vl_worsening": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Did vision loss continue worsening after onset?"
+          },
+          "vl_worsening_after_2_weeks": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "vl_improved": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "vl_completely_resolved": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Has the vision loss completely resolved? Asked if visual_loss_present is true."
+          },
+          "vl_blackouts": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Brief blackouts when looking around (partial monocular loss)"
+          },
+          "vl_agnosia": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "vl_agnosia_description": {
+            "type": "text",
+            "required": "conditional"
+          }
+        },
+        
+        "headache": {
+          "h_present": {
+            "type": "boolean",
+            "required": true
+          },
+          "h_description": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "h_first_onset": {
+            "type": "text",
+            "required": "conditional",
+            "description": "When headache first appeared"
+          },
+          "h_temporal_pattern": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["permanent", "transient", "intermittent"],
+            "description": "Overall temporal pattern of headache"
+          },
+          "h_flareup_usual_duration": {
+            "type": "text",
+            "required": "conditional",
+            "description": "How long each headache typically lasts (for intermittent patterns)"
+          },
+          "h_flareup_frequency": {
+            "type": "text",
+            "required": "conditional",
+            "description": "How often each flare-up lasts (for intermittent patterns)"
+          },
+          "h_interval_severity": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Headache severity between flare-ups (if not complete resolution)"
+          },
+          "h_worst_severity": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Worst headache severity experienced"
+          },
+          "h_location": {
+            "type": "text",
+            "required": "conditional"
+          },
+          "h_worse_on_straining": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "h_time_of_day": {
+            "type": "categorical",
+            "required": "conditional",
+            "valid_values": ["morning", "evening", "none"]
+          },
+          "h_completely_resolved": {
+            "type": "boolean",
+            "required": "conditional",
+            "description": "Has the headache completely resolved? Asked if h_present is true."
+          }
+        },
+
+        "appearance_changes": {
+          "ac_present": {
+            "type": "boolean",
+            "required": true
+          },
+          "ac_redness": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ac_discharge": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ac_proptosis": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ac_ptosis": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ac_pupillary_changes": {
+            "type": "boolean",
+            "required": "conditional"
+          },
+          "ac_rashes": {
+            "type": "boolean",
+            "required": "conditional"
+          }
+        },
+        
+        "healthcare_contacts": {
+          "hc_contact_occurred": {
+            "type": "boolean",
+            "required": true,
+            "description": "Healthcare contact for this specific episode"
+          },
+          "hc_investigations_and_treatments": {
+            "type": "text",
+            "required": "conditional"
+          }
+        },
+        
+        "other_symptoms": {
+          "other_symptoms": {
+            "type": "text",
+            "required": false,
+            "description": "Other symptoms associated with this episode"
+          }
+        },
+        
+        "functional_impact": {
+          "functional_impact": {
+            "type": "text",
+            "required": true,
+            "description": "How this episode affects daily life"
+          }
+        },
+        
+        "follow_up_blocks": {
+          "description": "Triggered follow-up question blocks for this episode",
+          "block_1": {
+            "name": "block_1",
+            "b1_uhthoff_phenomenon": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "b1_pulfrich_phenomenon": {
+              "type": "boolean",
+              "required": "conditional"
+            }
+          },
+          "block_6": {
+            "name": "block_6",
+            "b6_difficulty_reading": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "b6_can_read_by_spelling": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "b6_difficulty_recognising_people": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "b6_can_recognise_people_by_voice": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "b6_trouble_navigating": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "b6_can_see_whole_picture": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "b6_can_see_moving_water": {
+              "type": "boolean",
+              "required": "conditional"
+            },
+            "b6_can_see_car_movement": {
+              "type": "boolean",
+              "required": "conditional"
+            }
+          }
+        }
+      }
+    }
+  },
+  
+  "shared_data": {
+    "description": "Data shared across all episodes (not episode-specific)",
+    
+    "past_medical_history": {
+      "type": "array",
+      "description": "Past medical conditions",
+      "items": {
+        "condition": {"type": "text"},
+        "diagnosed_when": {"type": "text"},
+        "current_status": {"type": "text"}
+      }
+    },
+    
+    "medications": {
+      "type": "array",
+      "description": "Current medications",
+      "items": {
+        "medication_name": {"type": "text"},
+        "dose": {"type": "text"},
+        "frequency": {"type": "text"},
+        "indication": {"type": "text"}
+      }
+    },
+    
+    "family_history": {
+      "type": "array",
+      "description": "Family history of relevant conditions",
+      "items": {
+        "condition": {"type": "text"},
+        "relationship": {"type": "text"}
+      }
+    },
+    
+    "allergies": {
+      "type": "array",
+      "description": "Known allergies",
+      "items": {
+        "allergen": {"type": "text"},
+        "reaction": {"type": "text"}
+      }
+    },
+    
+    "social_history": {
+      "description": "Social history with nested structure",
+      "smoking": {
+        "status": {
+          "type": "categorical",
+          "valid_values": ["never", "current", "former"],
+          "description": "Smoking status"
+        },
+        "pack_years": {
+          "type": "integer",
+          "description": "Pack-years if former or current smoker"
+        }
+      },
+      "alcohol": {
+        "units_per_week": {
+          "type": "integer",
+          "description": "Units of alcohol per week"
+        },
+        "type": {
+          "type": "text",
+          "description": "Type of alcohol consumed"
+        }
+      },
+      "illicit_drugs": {
+        "status": {
+          "type": "categorical",
+          "valid_values": ["never", "current", "former"],
+          "description": "Illicit drug use status"
+        },
+        "type": {
+          "type": "text",
+          "description": "Type of drugs used"
+        },
+        "frequency": {
+          "type": "text",
+          "description": "Frequency of use"
+        }
+      },
+      "occupation": {
+        "current": {
+          "type": "text",
+          "description": "Current occupation"
+        },
+        "past": {
+          "type": "text",
+          "description": "Past relevant occupations"
+        }
+      }
+    },
+    
+    "systems_review": {
+      "description": "Systems review placeholder - only general_health currently populated",
+      "general_health": {
+        "chills": {"type": "boolean"},
+        "chills_details": {"type": "text"},
+        "fevers": {"type": "boolean"},
+        "fever_details": {"type": "text"},
+        "night_sweats": {"type": "boolean"},
+        "night_sweats_details": {"type": "text"},
+        "fatigue": {"type": "boolean"},
+        "fatigue_details": {"type": "text"},
+        "appetite_or_weight_change": {"type": "boolean"},
+        "appetite_weight_details": {"type": "text"},
+        "lumps": {"type": "boolean"},
+        "lumps_details": {"type": "text"},
+        "unwell": {"type": "boolean"},
+        "unwell_details": {"type": "text"}
+      },
+      "neurological": {"type": "object", "description": "Placeholder - to be populated"},
+      "ear_nose_throat": {"type": "object", "description": "Placeholder - to be populated"},
+      "skin": {"type": "object", "description": "Placeholder - to be populated"},
+      "respiratory": {"type": "object", "description": "Placeholder - to be populated"},
+      "cardiovascular": {"type": "object", "description": "Placeholder - to be populated"},
+      "blood": {"type": "object", "description": "Placeholder - to be populated"},
+      "gastrointestinal": {"type": "object", "description": "Placeholder - to be populated"},
+      "musculoskeletal": {"type": "object", "description": "Placeholder - to be populated"},
+      "genitourinary": {"type": "object", "description": "Placeholder - to be populated"},
+      "other": {"type": "object", "description": "Placeholder - to be populated"}
+    }
+  },
+  
+  "notes": {
+    "schema_version_history": "V2.1.0: Added episode timestamps (timestamp_started, timestamp_last_updated). Updated shared_data to match clinical_data_model.json (nested social_history, added allergies, added systems_review placeholder). Episodes with no clinical data are excluded from export.",
+    "episode_definition": "An episode represents a distinct symptom presentation. New episode if: (1) symptom type changes, (2) location changes, (3) complete resolution >1 month then recurrence.",
+    "operational_fields_excluded": "The following operational fields are tracked internally but excluded from JSON export: questions_answered, follow_up_blocks_activated, follow_up_blocks_completed.",
+    "empty_episode_filtering": "Episodes with only metadata (episode_id, timestamps) and no clinical fields are excluded from export. Episodes with negative findings (e.g., visual_loss_present: false) ARE included as they represent clinical data.",
+    "episode_id_guarantees": "Episode IDs are 1-indexed integers, strictly increasing with no gaps in the exported array. Internal episodes may be sparse but export is always contiguous.",
+    "temporal_fields": "Each symptom section has its own temporal fields (first_onset, temporal_pattern, flareup_duration, etc). This allows different symptoms within the same episode to have different temporal patterns.",
+    "resolved_fields": "Each symptom that has a _present field also has a _completely_resolved field. This allows tracking resolution status per symptom rather than per episode.",
+    "follow_up_blocks": "Triggered based on episode-specific data. Each episode can trigger different blocks.",
+    "field_prefixes": "vl_ = vision loss, h_ = headache, ep_ = eye pain, ac_ = appearance changes, cp_ = color perception, vp_ = visual phenomena, dp_ = diplopia, hc_ = healthcare contacts, b1-b6 = follow-up blocks",
+    "shared_data_structure": "Social history uses nested structure (e.g., social_history.smoking.status) to prevent field name collisions. Systems review is a placeholder with only general_health populated - other systems to be added in future versions."
+  }
+}
