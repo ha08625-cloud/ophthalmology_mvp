@@ -199,6 +199,16 @@ def submit_turn():
     # Issue command
     command = UserTurn(user_input=user_input, state=state)
     result = dialogue_manager.handle(command)
+
+# TEMPORARY DEBUG
+    logger.info(f"DEBUG: result.debug keys: {result.debug.keys()}")
+    if 'state_view' in result.debug:
+        logger.info(f"DEBUG: state_view episodes: {len(result.debug['state_view'].get('episodes', []))}")
+        # ADD THIS:
+        for i, ep in enumerate(result.debug['state_view'].get('episodes', [])):
+            logger.info(f"DEBUG: Episode {i+1} has {len(ep.get('fields', []))} fields: {ep.get('fields', [])}")
+    else:
+        logger.error("DEBUG: state_view NOT in result.debug!")
     
     if isinstance(result, IllegalCommand):
         return jsonify({'error': result.reason}), 400

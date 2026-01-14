@@ -31,6 +31,7 @@ from backend.utils.helpers import generate_consultation_id, generate_consultatio
 from backend.utils.episode_classifier import classify_field
 from backend.utils.conversation_modes import ConversationMode
 from backend.utils.episode_hypothesis_generator_stub import EpisodeHypothesisGeneratorStub
+from backend.utils.display_helpers import format_state_for_display
 
 # Command and result types
 # When copying to local, adjust to: from backend.commands import ...
@@ -117,7 +118,7 @@ class DialogueManagerV2:
         # Extract symptom categories from ruleset (cached at init)
         self.symptom_categories = self._extract_symptom_categories(question_selector)
         
-        # Cache fieldÃ¢â€ â€™question mappings (derived from immutable ruleset)
+        # Cache fieldÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢question mappings (derived from immutable ruleset)
         # Used for marking questions satisfied when fields are extracted
         self._question_to_field = question_selector._question_to_field.copy()
         self._field_to_questions = {}
@@ -170,6 +171,66 @@ class DialogueManagerV2:
         if not (hasattr(summary_generator, 'generate') and 
                 callable(getattr(summary_generator, 'generate', None))):
             raise TypeError("summary_generator must have callable generate() method")
+    
+    def _commit_allowed(self, mode: ConversationMode) -> bool:
+        """
+        Policy decision: Allow episode field commits for current mode?
+        
+        Guard placement rationale:
+        - DialogueManager owns conversation mode
+        - DialogueManager owns episode routing logic
+        - DialogueManager owns safety policy
+        
+        Args:
+            mode: Current conversation mode enum
+            
+        Returns:
+            bool: True if episode commits permitted, False otherwise
+            
+        Current implementation:
+            Always returns True (preparation for V3 ambiguity blocking)
+            
+        Future expansion:
+            - MODE_DISCOVERY: block commits
+            - MODE_CLARIFICATION: block commits
+            - MODE_EPISODE_EXTRACTION: allow commits
+        """
+        # V3-GUARD: Preparation stub
+        # Always permit commits until Episode Hypothesis Manager wired
+        return True
+    
+    def _log_commit_block(self, fields: Dict[str, Any], mode: ConversationMode, episode_id: int) -> None:
+        """
+        Record structured event when episode commits are blocked.
+        
+        This creates an audit trail for:
+        - Forced resolution transparency
+        - Replay debugging
+        - Mode transition validation
+        
+        Args:
+            fields: Parsed fields that were blocked
+            mode: Conversation mode that triggered block
+            episode_id: Target episode for blocked commit
+            
+        Logs at WARNING level with structured data.
+        Does NOT modify state.
+        """
+        commit_block_event = {
+            'mode': mode.value,
+            'episode_id': episode_id,
+            'blocked_fields': list(fields.keys()),
+            'field_count': len(fields),
+            'reason': 'commit_guard'
+        }
+        
+        logger.warning(
+            f"Commit blocked: mode={mode.value}, episode={episode_id}, "
+            f"fields={list(fields.keys())[:3]}{'...' if len(fields) > 3 else ''}"
+        )
+        
+        # V3-FUTURE: Add to state_manager audit log or clarification buffer
+        # For now, logging only
     
     def _extract_symptom_categories(self, question_selector) -> List[str]:
         """
@@ -659,6 +720,14 @@ class DialogueManagerV2:
         if routing_debug:  # Only add if we have routing info
             debug['routing'] = routing_debug
         
+        # Add human-readable state view for UI display
+        debug['state_view'] = format_state_for_display(canonical_snapshot)
+
+        # Add human-readable state view for UI display
+        logger.info(f"DEBUG: canonical_snapshot episodes: {canonical_snapshot.get('episodes', [])}")
+        debug['state_view'] = format_state_for_display(canonical_snapshot)
+        logger.info(f"DEBUG: state_view after formatting: {debug['state_view']}")
+        
         # Wrap state in opaque envelope
         state = ConsultationState.from_json(canonical_snapshot)
         
@@ -835,10 +904,14 @@ class DialogueManagerV2:
             }
         
         # Route extracted fields
+        # V3-GUARD: Convert mode to enum and pass to routing for commit guard
+        current_mode = ConversationMode(state_manager.conversation_mode)
+        
         unmapped = self._route_extracted_fields(
             episode_id=current_episode_id,
             extracted=fields,
-            state_manager=state_manager
+            state_manager=state_manager,
+            mode=current_mode
         )
         
         # Mark questions satisfied based on extracted fields
@@ -1041,16 +1114,38 @@ class DialogueManagerV2:
         self,
         episode_id: int,
         extracted: Dict[str, Any],
-        state_manager
+        state_manager,
+        mode: ConversationMode
     ) -> Dict[str, Any]:
         """
         Route extracted fields to episode or shared storage.
         
-        Now captures routing decisions with episode_id for debug panel.
+        V3-GUARD: Centralizes all RP â†’ State writes behind commit guard.
+        
+        Routing rules:
+        - Episode fields: Prefix-based + guard-gated
+        - Shared fields: Prefix-based + collection detection
+        - Unknown fields: Quarantined in return value
+        
+        Commit semantics:
+        - Shared fields: Always written (no guard)
+        - Episode fields: Written only if commit_allowed(mode)
+        - Blocked episode fields: Logged, not written
+        
+        Args:
+            episode_id: Target episode for episode-scoped fields
+            extracted: Parsed fields from Response Parser
+            state_manager: StateManager instance
+            mode: Current conversation mode (V3-GUARD)
+            
+        Returns:
+            dict: Unmapped fields (quarantined, not written)
         """
         unmapped = {}
         routing_info = []  # Capture for debug
+        episode_fields_to_commit = {}  # V3-GUARD: Buffer for guarded writes
         
+        # Phase 1: Classify and buffer
         for field_name, value in extracted.items():
             if field_name.startswith('_'):
                 continue
@@ -1062,13 +1157,11 @@ class DialogueManagerV2:
             routing_info.append((field_name, value, classification, captured_episode_id))
             
             if classification == 'episode':
-                try:
-                    state_manager.set_episode_field(episode_id, field_name, value)
-                    logger.debug(f"Episode {episode_id}: {field_name} = {value}")
-                except Exception as e:
-                    logger.error(f"Failed to set episode field {field_name}: {e}")
+                # Buffer for guarded commit (don't write yet)
+                episode_fields_to_commit[field_name] = value
                     
             elif classification == 'shared':
+                # Shared fields bypass guard (always written)
                 try:
                     state_manager.set_shared_field(field_name, value)
                     logger.debug(f"Shared data: {field_name} = {value}")
@@ -1076,8 +1169,24 @@ class DialogueManagerV2:
                     logger.error(f"Failed to set shared field {field_name}: {e}")
                     
             else:
+                # Quarantine unknown fields
                 unmapped[field_name] = value
                 logger.warning(f"Unmapped field: {field_name} = {value}")
+        
+        # Phase 2: Guarded episode commit (SINGLE DECISION POINT)
+        if episode_fields_to_commit:
+            if self._commit_allowed(mode):
+                # Commit permitted - write all buffered episode fields
+                for field_name, value in episode_fields_to_commit.items():
+                    try:
+                        state_manager.set_episode_field(episode_id, field_name, value)
+                        logger.debug(f"Episode {episode_id}: {field_name} = {value}")
+                    except Exception as e:
+                        logger.error(f"Failed to set episode field {field_name}: {e}")
+            else:
+                # Commit blocked - log structured event
+                self._log_commit_block(episode_fields_to_commit, mode, episode_id)
+                # Note: Parsed data returned normally, just not written
         
         # Store for debug builder
         self._last_routing_info = routing_info
