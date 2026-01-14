@@ -30,6 +30,7 @@ from typing import Optional, Dict, Any, List
 from helpers import generate_consultation_id, generate_consultation_filename
 from episode_classifier import classify_field
 from conversation_modes import ConversationMode
+from episode_hypothesis_generator_stub import EpisodeHypothesisGeneratorStub
 
 # Command and result types
 # When copying to local, adjust to: from backend.commands import ...
@@ -109,13 +110,35 @@ class DialogueManagerV2:
         self.json_formatter = json_formatter  # Stateless, safe to cache
         self.summary_generator = summary_generator  # Stateless, safe to cache
         
+        # Episode Hypothesis Generator (stub for now)
+        # Stateless, safe to cache
+        self.episode_hypothesis_generator = EpisodeHypothesisGeneratorStub()
+        
         # Extract symptom categories from ruleset (cached at init)
         self.symptom_categories = self._extract_symptom_categories(question_selector)
+        
+        # Cache fieldÃ¢â€ â€™question mappings (derived from immutable ruleset)
+        # Used for marking questions satisfied when fields are extracted
+        self._question_to_field = question_selector._question_to_field.copy()
+        self._field_to_questions = {}
+        for q_id, field in self._question_to_field.items():
+            if field not in self._field_to_questions:
+                self._field_to_questions[field] = set()
+            self._field_to_questions[field].add(q_id)
+        # Freeze for safety (prevent accidental mutation)
+        self._field_to_questions = {
+            field: frozenset(q_ids) 
+            for field, q_ids in self._field_to_questions.items()
+        }
         
         # Routing debug tracking (per-turn)
         self._last_routing_info: List[tuple] = []
         
-        logger.info(f"Dialogue Manager V2 initialized (functional core, {len(self.symptom_categories)} symptom categories)")
+        logger.info(
+            f"Dialogue Manager V2 initialized (functional core, "
+            f"{len(self.symptom_categories)} symptom categories, "
+            f"{len(self._question_to_field)} question-field mappings)"
+        )
     
     def _validate_modules(self, state_manager_class, question_selector, response_parser,
                          json_formatter, summary_generator):
@@ -744,6 +767,20 @@ class DialogueManagerV2:
         if pending_question is None:
             raise ValueError("No pending question in state")
         
+        # V3: Generate episode hypothesis signal
+        # TODO: Episode Hypothesis Manager will consume this signal for mode transitions
+        # TODO: Pass actual current_episode_context (episode summary, presenting complaint, etc)
+        ehg_signal = self.episode_hypothesis_generator.generate_hypothesis(
+            user_utterance=user_input,
+            current_episode_context=None  # TODO: Extract from state_manager
+        )
+        logger.debug(
+            f"EHG signal: hypothesis_count={ehg_signal.hypothesis_count}, "
+            f"pivot_detected={ehg_signal.pivot_detected}"
+        )
+        # Note: Signal generated but not yet acted upon. Episode Hypothesis Manager
+        # will be wired in future to consume this signal and drive mode transitions.
+        
         # Get next questions for multi-question metadata window
         next_questions = self.selector.get_next_n_questions(
             current_question_id=pending_question['id'],
@@ -804,7 +841,20 @@ class DialogueManagerV2:
             state_manager=state_manager
         )
         
-        # Mark question answered
+        # Mark questions satisfied based on extracted fields
+        # This happens BEFORE marking the pending question as answered
+        # because satisfaction is about data obtained, not about which question was asked
+        for field_name in fields.keys():
+            if field_name in self._field_to_questions:
+                for q_id in self._field_to_questions[field_name]:
+                    state_manager.mark_question_satisfied(current_episode_id, q_id)
+                    logger.debug(
+                        f"Episode {current_episode_id}: marked question '{q_id}' "
+                        f"satisfied via field '{field_name}'"
+                    )
+        
+        # Mark pending question as answered (separate from satisfaction)
+        # This tracks which questions were explicitly asked
         state_manager.mark_question_answered(current_episode_id, pending_question['id'])
         
         # Check triggers and block completion
