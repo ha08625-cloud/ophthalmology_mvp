@@ -246,6 +246,7 @@ class StateManagerV2:
     # - snapshot_state(): INCLUDES operational, INCLUDES full provenance
     OPERATIONAL_FIELDS = {
         'questions_answered',
+        'questions_satisfied',
         'follow_up_blocks_activated',
         'follow_up_blocks_completed'
     }
@@ -827,6 +828,7 @@ class StateManagerV2:
             'timestamp_started': current_time,
             'timestamp_last_updated': current_time,
             'questions_answered': set(),
+            'questions_satisfied': set(),
             'follow_up_blocks_activated': set(),
             'follow_up_blocks_completed': set(),
             '_provenance': {},  # V3: Field-level provenance tracking
@@ -1023,6 +1025,50 @@ class StateManagerV2:
         episode = self.episodes[episode_id - 1]
         return episode['questions_answered'].copy()
     
+    def mark_question_satisfied(self, episode_id: int, question_id: str) -> None:
+        """
+        Mark question as satisfied (data obtained, whether asked or volunteered).
+        
+        A question is satisfied when we have data for its primary field,
+        regardless of whether we explicitly asked that question.
+        
+        Semantic distinction:
+        - questions_answered: We explicitly asked this question
+        - questions_satisfied: We have data for this question's intent
+        
+        Relationship: questions_answered âŠ† questions_satisfied
+        
+        Args:
+            episode_id: Episode to update (1-indexed)
+            question_id: Question identifier to mark as satisfied
+            
+        Raises:
+            ValueError: If episode_id doesn't exist
+        """
+        self._validate_episode_id(episode_id)
+        
+        episode = self.episodes[episode_id - 1]
+        episode['questions_satisfied'].add(question_id)
+        logger.debug(f"Episode {episode_id}: marked question '{question_id}' as satisfied")
+    
+    def get_questions_satisfied(self, episode_id: int) -> set:
+        """
+        Get set of satisfied question IDs for an episode.
+        
+        Args:
+            episode_id: Episode to query (1-indexed)
+            
+        Returns:
+            set[str]: Copy of questions_satisfied set
+            
+        Raises:
+            ValueError: If episode_id doesn't exist
+        """
+        self._validate_episode_id(episode_id)
+        
+        episode = self.episodes[episode_id - 1]
+        return episode['questions_satisfied'].copy()
+    
     # ========================
     # Follow-up Block Tracking (for Question Selector V2)
     # ========================
@@ -1068,7 +1114,8 @@ class StateManagerV2:
         V3: Returns internal representation with enum mode in provenance.
         
         Returns a dict containing all episode fields including tracking sets
-        (questions_answered, follow_up_blocks_activated, follow_up_blocks_completed).
+        (questions_answered, questions_satisfied, follow_up_blocks_activated, 
+        follow_up_blocks_completed).
         
         Args:
             episode_id: Episode to retrieve (1-indexed)
@@ -1296,7 +1343,7 @@ class StateManagerV2:
         
         This is the authoritative representation used for:
         - Transport layer persistence (Flask session, console memory)
-        - Round-trip serialization (state ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ snapshot ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ state)
+        - Round-trip serialization (state ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ snapshot ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ state)
         - V3 provenance and confidence tracking
         
         Properties:
@@ -1379,11 +1426,19 @@ class StateManagerV2:
                     continue
                 
                 # Convert lists back to sets for operational fields
-                if field_name in {'questions_answered', 'follow_up_blocks_activated', 
+                if field_name in {'questions_answered', 'questions_satisfied',
+                                 'follow_up_blocks_activated', 
                                  'follow_up_blocks_completed'}:
                     episode[field_name] = set(value) if isinstance(value, list) else value
                 else:
                     episode[field_name] = state_manager._deep_copy(value)
+            
+            # Backward compatibility: Hydrate questions_satisfied if missing from snapshot
+            # Rule: questions_satisfied = questions_answered for old sessions
+            # Check if it was in the original snapshot data (not just if key exists now)
+            if 'questions_satisfied' not in episode_data:
+                episode['questions_satisfied'] = set(episode.get('questions_answered', set()))
+                logger.debug(f"Episode {episode_id}: hydrated questions_satisfied from questions_answered (backward compatibility)")
         
         # Restore shared data (flat structure)
         shared_data = snapshot.get('shared_data', {})
