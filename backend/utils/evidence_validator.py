@@ -1,4 +1,3 @@
-```python
 """
 Evidence span validator for multi-episode intake system.
 

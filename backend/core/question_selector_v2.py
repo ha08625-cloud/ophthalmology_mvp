@@ -84,7 +84,7 @@ class QuestionSelectorV2:
         Initialize selector with ruleset.
         
         Args:
-            ruleset_path: Path to ruleset.json
+            ruleset_path: Path to data/ruleset_v2.json
             
         Raises:
             FileNotFoundError: If ruleset doesn't exist

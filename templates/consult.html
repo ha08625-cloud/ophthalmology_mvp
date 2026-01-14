@@ -634,7 +634,7 @@
                     const cls = item.recognized ? '' : 'unknown';
                     html += `<div class="routing-item ${cls}">`;
                     html += `<strong>${item.field}</strong> = ${item.value}<br>`;
-                    html += `Ã¢â€ â€™ ${item.resolution}`;
+                    html += `-> ${item.resolution}`;
                     if (item.episode_id) html += ` (episode ${item.episode_id})`;
                     html += ` [${item.rule}]`;
                     html += '</div>';

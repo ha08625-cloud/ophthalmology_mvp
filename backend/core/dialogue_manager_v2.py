@@ -27,21 +27,21 @@ from typing import Optional, Dict, Any, List
 
 # Flat imports for server testing
 # When copying to local, adjust to: from backend.utils.helpers import ...
-from helpers import generate_consultation_id, generate_consultation_filename
-from episode_classifier import classify_field
-from conversation_modes import ConversationMode
-from episode_hypothesis_generator_stub import EpisodeHypothesisGeneratorStub
+from backend.utils.helpers import generate_consultation_id, generate_consultation_filename
+from backend.utils.episode_classifier import classify_field
+from backend.utils.conversation_modes import ConversationMode
+from backend.utils.episode_hypothesis_generator_stub import EpisodeHypothesisGeneratorStub
 
 # Command and result types
 # When copying to local, adjust to: from backend.commands import ...
-from commands import (
+from backend.commands import (
     ConsultationState,
     StartConsultation,
     UserTurn,
     FinalizeConsultation,
     Command
 )
-from results import TurnResult, FinalReport, IllegalCommand
+from backend.results import TurnResult, FinalReport, IllegalCommand
 
 logger = logging.getLogger(__name__)
 
@@ -1129,7 +1129,7 @@ class DialogueManagerV2:
             list: Routing info dicts with field, value, resolution, episode_id, rule, recognized
         """
         # Import classifier data (flat imports for server)
-        from episode_classifier import EPISODE_PREFIXES, SHARED_PREFIXES, COLLECTION_FIELDS
+        from backend.utils.episode_classifier import EPISODE_PREFIXES, SHARED_PREFIXES, COLLECTION_FIELDS
         
         routing_debug = []
         

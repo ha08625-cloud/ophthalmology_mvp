@@ -23,7 +23,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 
-from hf_client import HuggingFaceClient
+from backend.utils.hf_client_v2 import HuggingFaceClient
 
 logger = logging.getLogger(__name__)
 
