@@ -68,6 +68,7 @@ class QuestionSelectorV2:
     # Required keys in episode_data
     REQUIRED_EPISODE_KEYS = {
         'questions_answered',
+        'questions_satisfied',
         'follow_up_blocks_activated', 
         'follow_up_blocks_completed'
     }
@@ -110,6 +111,11 @@ class QuestionSelectorV2:
         
         # Validate ruleset structure (fail fast)
         self._validate_ruleset()
+        
+        # Build deterministic field mappings (derived from immutable ruleset)
+        self._question_to_field = {}      # question_id -> field_name
+        self._field_to_questions = {}     # field_name -> frozenset[question_id]
+        self._build_field_mappings()
         
         logger.info(f"Question Selector V2 initialized with {len(self.section_order)} sections")
     
@@ -197,6 +203,7 @@ class QuestionSelectorV2:
         
         # Extract tracking sets (now guaranteed to be sets)
         questions_answered = episode["questions_answered"]
+        questions_satisfied = episode["questions_satisfied"]
         blocks_activated = episode["follow_up_blocks_activated"]
         blocks_completed = episode["follow_up_blocks_completed"]
         
@@ -204,7 +211,7 @@ class QuestionSelectorV2:
         pending_blocks = blocks_activated - blocks_completed
         
         for block_id in sorted(pending_blocks):  # Deterministic order
-            next_q = self._get_next_block_question(block_id, questions_answered, episode)
+            next_q = self._get_next_block_question(block_id, questions_satisfied, episode)
             if next_q is not None:
                 return copy.deepcopy(next_q)  # Return copy, not original
         
@@ -215,8 +222,8 @@ class QuestionSelectorV2:
             for question in section_questions:
                 q_id = question.get("id")
                 
-                # Skip if already answered
-                if q_id in questions_answered:
+                # Skip if already satisfied (data obtained, whether asked or volunteered)
+                if q_id in questions_satisfied:
                     continue
                 
                 # Check if eligible (probe or condition met)
@@ -620,7 +627,7 @@ class QuestionSelectorV2:
     def _get_next_block_question(
         self, 
         block_id: str, 
-        questions_answered: set, 
+        questions_satisfied: set, 
         episode_data: dict
     ) -> Optional[dict]:
         """
@@ -631,7 +638,7 @@ class QuestionSelectorV2:
         
         Args:
             block_id: Block identifier
-            questions_answered: Set of answered question IDs
+            questions_satisfied: Set of satisfied question IDs (data obtained)
             episode_data: Current episode state (already defensively copied)
             
         Returns:
@@ -645,8 +652,8 @@ class QuestionSelectorV2:
         for question in block_questions:
             q_id = question.get("id")
             
-            # Skip answered
-            if q_id in questions_answered:
+            # Skip satisfied (data already obtained)
+            if q_id in questions_satisfied:
                 continue
             
             # Skip ineligible
@@ -801,3 +808,136 @@ class QuestionSelectorV2:
             raise ValueError(error_msg)
         
         logger.info("Ruleset validation passed")
+    
+    def _build_field_mappings(self) -> None:
+        """
+        Build deterministic fieldâ†”question mappings from ruleset.
+        
+        Called once during initialization. Treats every question-field pair
+        as 1:1 (primary field only).
+        
+        Walks through all questions in sections and follow_up_blocks to create:
+        - _question_to_field: Maps question_id -> field_name
+        - _field_to_questions: Maps field_name -> frozenset of question_ids
+        
+        This mapping is derived from the immutable ruleset and enables the
+        Question Satisfaction Model: when a field is extracted, we can mark
+        all questions that would provide that field as satisfied.
+        
+        Design rationale:
+        - One field per question (primary field)
+        - Multi-field questions deferred to V5+
+        - Deterministic: same ruleset always produces same mapping
+        - Immutable: built once, never modified
+        """
+        # Temporary mutable dict for building
+        field_to_questions_temp = {}
+        
+        # Walk all section questions
+        for section_name in self.section_order:
+            section_questions = self.sections.get(section_name, [])
+            
+            for question in section_questions:
+                q_id = question.get("id")
+                field = question.get("field")
+                
+                if not q_id or not field:
+                    # Should not happen - validation caught this
+                    continue
+                
+                # Record question -> field (1:1)
+                self._question_to_field[q_id] = field
+                
+                # Record field -> questions (1:many)
+                if field not in field_to_questions_temp:
+                    field_to_questions_temp[field] = set()
+                field_to_questions_temp[field].add(q_id)
+        
+        # Walk all follow-up block questions
+        for block_id, block_def in self.follow_up_blocks.items():
+            block_questions = block_def.get("questions", [])
+            
+            for question in block_questions:
+                q_id = question.get("id")
+                field = question.get("field")
+                
+                if not q_id or not field:
+                    # Should not happen - validation caught this
+                    continue
+                
+                # Record question -> field (1:1)
+                self._question_to_field[q_id] = field
+                
+                # Record field -> questions (1:many)
+                if field not in field_to_questions_temp:
+                    field_to_questions_temp[field] = set()
+                field_to_questions_temp[field].add(q_id)
+        
+        # Freeze field -> questions mapping (immutable after construction)
+        self._field_to_questions = {
+            field: frozenset(q_ids)
+            for field, q_ids in field_to_questions_temp.items()
+        }
+        
+        logger.info(
+            f"Built field mappings: {len(self._question_to_field)} questions, "
+            f"{len(self._field_to_questions)} unique fields"
+        )
+    
+    # =========================================================================
+    # Public Field Mapping API
+    # =========================================================================
+    
+    def get_question_requirements(self) -> dict[str, frozenset[str]]:
+        """
+        Get field requirements for each question.
+        
+        Returns a mapping from question_id to the set of fields required to
+        satisfy that question. Currently always a singleton set (1:1 mapping)
+        as we treat each question as having exactly one primary field.
+        
+        This mapping is derived from the immutable ruleset and can be used by
+        the Dialogue Manager to determine which questions should be marked
+        satisfied when fields are extracted.
+        
+        Returns:
+            dict mapping question_id -> frozenset of required field names
+            
+        Note:
+            Currently always returns singleton frozensets (one field per question).
+            Future versions may support multi-field questions.
+            
+        Example:
+            {
+                'vl_1': frozenset({'vl_present'}),
+                'vl_2': frozenset({'vl_single_eye'}),
+                'vl_3': frozenset({'vl_laterality'}),
+                ...
+            }
+        """
+        return {
+            q_id: frozenset([field]) 
+            for q_id, field in self._question_to_field.items()
+        }
+    
+    def get_field_to_questions_mapping(self) -> dict[str, frozenset[str]]:
+        """
+        Get reverse mapping: field -> questions that would satisfy it.
+        
+        This is the inverse of get_question_requirements() and is more
+        convenient for the Dialogue Manager's use case: given extracted
+        fields, find all questions to mark as satisfied.
+        
+        Returns:
+            dict mapping field_name -> frozenset of question_ids
+            
+        Example:
+            {
+                'vl_present': frozenset({'vl_1'}),
+                'vl_single_eye': frozenset({'vl_2'}),
+                'vl_laterality': frozenset({'vl_3'}),
+                ...
+            }
+        """
+        # Return copy to prevent external mutation
+        return self._field_to_questions.copy()
