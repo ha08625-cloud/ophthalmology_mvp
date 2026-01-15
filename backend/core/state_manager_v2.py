@@ -719,7 +719,8 @@ class StateManagerV2:
         self,
         template_id: str,
         user_text: str,
-        replayable: bool
+        replayable: bool,
+        rendered_text: Optional[str] = None
     ) -> None:
         """
         Append turn to clarification transcript.
@@ -732,6 +733,8 @@ class StateManagerV2:
             template_id: Clarification question template ID
             user_text: Verbatim user response
             replayable: Whether turn is eligible for replay
+            rendered_text: V3.1 - Actual question text shown to user (with placeholders filled).
+                Required for replay to work. If None, replay adapter will fail loudly.
             
         Raises:
             RuntimeError: If clarification context not initialized
@@ -741,7 +744,8 @@ class StateManagerV2:
             state.append_clarification_turn(
                 template_id="clarify_location",
                 user_text="It was in my left eye",
-                replayable=True
+                replayable=True,
+                rendered_text="Where exactly was the headache located?"
             )
         """
         if self.clarification_context is None:
@@ -754,7 +758,8 @@ class StateManagerV2:
         turn = ClarificationTurn(
             template_id=template_id,
             user_text=user_text,
-            replayable=replayable
+            replayable=replayable,
+            rendered_text=rendered_text
         )
         
         # Append to transcript and sync entry_count
@@ -1076,7 +1081,7 @@ class StateManagerV2:
         - questions_answered: We explicitly asked this question
         - questions_satisfied: We have data for this question's intent
         
-        Relationship: questions_answered âŠ† questions_satisfied
+        Relationship: questions_answered Ã¢Å â€  questions_satisfied
         
         Args:
             episode_id: Episode to update (1-indexed)
@@ -1383,7 +1388,7 @@ class StateManagerV2:
         
         This is the authoritative representation used for:
         - Transport layer persistence (Flask session, console memory)
-        - Round-trip serialization (state ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ snapshot ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ state)
+        - Round-trip serialization (state ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ snapshot ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ state)
         - V3 provenance and confidence tracking
         
         Properties:
