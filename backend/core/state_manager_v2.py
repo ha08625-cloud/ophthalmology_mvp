@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 
 # Flat imports for server testing
 # When copying to local, adjust to: from backend.conversation_modes import ...
-from backend.utils.conversation_modes import ConversationMode, VALID_MODES
+from conversation_modes import ConversationMode, VALID_MODES
 
 logger = logging.getLogger(__name__)
 
@@ -158,23 +158,52 @@ class ClarificationTurn:
         template_id: ID of clarification question template
         user_text: Raw user response (verbatim)
         replayable: Whether this turn is eligible for Response Parser replay
+        rendered_text: The actual question text shown to user (with placeholders filled).
+            Optional for backward compatibility with pre-V3.1 snapshots.
+            If None, replay adapter will fail loudly if replay is attempted.
     """
     template_id: str
     user_text: str
     replayable: bool
+    rendered_text: Optional[str] = None
     
     def __post_init__(self):
         """Validate fields after initialization"""
         if not self.user_text or not self.user_text.strip():
             raise ValueError("user_text cannot be empty")
+        # Note: rendered_text can be None for backward compatibility
+        # Replay adapter validates rendered_text presence when needed
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for serialization"""
         return {
             'template_id': self.template_id,
             'user_text': self.user_text,
-            'replayable': self.replayable
+            'replayable': self.replayable,
+            'rendered_text': self.rendered_text
         }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ClarificationTurn':
+        """
+        Create ClarificationTurn from dict.
+        
+        Backward compatible: handles snapshots without rendered_text field.
+        If rendered_text is missing, sets to None. Replay adapter will
+        fail loudly if replay is attempted on such turns.
+        
+        Args:
+            data: Dict with template_id, user_text, replayable, and optionally rendered_text
+            
+        Returns:
+            ClarificationTurn instance
+        """
+        return cls(
+            template_id=data['template_id'],
+            user_text=data['user_text'],
+            replayable=data['replayable'],
+            rendered_text=data.get('rendered_text')  # None if missing (backward compat)
+        )
 
 
 @dataclass
@@ -212,9 +241,20 @@ class ClarificationContext:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ClarificationContext':
-        """Reconstruct from dict"""
+        """
+        Reconstruct from dict.
+        
+        Backward compatible: delegates to ClarificationTurn.from_dict()
+        which handles missing rendered_text field gracefully.
+        
+        Args:
+            data: Dict with transcript, entry_count, resolution_status
+            
+        Returns:
+            ClarificationContext instance
+        """
         transcript = [
-            ClarificationTurn(**turn_data)
+            ClarificationTurn.from_dict(turn_data)
             for turn_data in data.get('transcript', [])
         ]
         resolution_str = data.get('resolution_status')
@@ -556,7 +596,6 @@ class StateManagerV2:
         Serialize provenance dict with enum mode conversion.
         
         Converts ConversationMode enum to string for JSON serialization.
-        Handles both enum and string mode for migration compatibility.
         
         Args:
             provenance_dict: Raw _provenance dict
@@ -566,17 +605,10 @@ class StateManagerV2:
         """
         serialized = {}
         for field_name, prov_record in provenance_dict.items():
-            # Handle both enum and string mode (migration compatibility)
-            mode = prov_record['mode']
-            if isinstance(mode, ConversationMode):
-                mode_str = mode.value
-            else:
-                mode_str = mode  # Already a string
-            
             serialized[field_name] = {
                 'source': prov_record['source'],
                 'confidence': prov_record['confidence'],
-                'mode': mode_str
+                'mode': prov_record['mode'].value  # Enum -> string for JSON
             }
         return serialized
     
@@ -1387,7 +1419,7 @@ class StateManagerV2:
             'episodes': serializable_episodes,
             'shared_data': self._serialize_shared_data(exclude_provenance=False),  # V3: Include provenance
             'dialogue_history': self._deep_copy(self.dialogue_history),
-            'conversation_mode': self.conversation_mode,  # V3: Serialize enum to string
+            'conversation_mode': self.conversation_mode.value,  # V3: Serialize enum to string
             'clarification_context': clarification_context_dict  # V3: Clarification buffer
         }
     
