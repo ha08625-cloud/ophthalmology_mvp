@@ -20,12 +20,33 @@ Design principles:
 
 import json
 import logging
+from enum import Enum
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 
-from backend.utils.hf_client_v2 import HuggingFaceClient
+from hf_client import HuggingFaceClient
 
 logger = logging.getLogger(__name__)
+
+
+# Extraction mode (V3.1)
+# Used for instrumentation and provenance tracking.
+# The parser does not change behavior based on mode.
+class ExtractionMode(str, Enum):
+    """
+    Extraction mode flag for Response Parser.
+    
+    This is a parser-internal contract flag, not conversation-level state.
+    The parser does not interpret the mode; it only echoes it in metadata
+    for instrumentation, logging, and provenance tracking.
+    
+    Values:
+        NORMAL_EXTRACTION: Standard extraction from patient response
+        REPLAY_EXTRACTION: Extraction from clarification replay transcript
+    """
+    NORMAL_EXTRACTION = "normal_extraction"
+    REPLAY_EXTRACTION = "replay_extraction"
+
 
 # Type alias for return structure (contract v1.0.0)
 ParseResult = Dict[str, Any]
@@ -99,7 +120,8 @@ class ResponseParserV2:
         patient_response: str,
         turn_id: Optional[str] = None,
         next_questions: Optional[List[Dict[str, Any]]] = None,
-        symptom_categories: Optional[List[str]] = None
+        symptom_categories: Optional[List[str]] = None,
+        mode: ExtractionMode = ExtractionMode.NORMAL_EXTRACTION
     ) -> ParseResult:
         """
         Extract structured fields from patient response.
@@ -118,6 +140,10 @@ class ResponseParserV2:
             symptom_categories: List of symptom category field names (e.g., 'vl_present').
                 Parser may extract these if patient mentions new symptoms.
                 Default None (no symptom categories).
+            mode: Extraction mode flag for instrumentation (V3.1).
+                Does not change parser behavior. Echoed in metadata for
+                logging, provenance tracking, and future safeguards.
+                Default NORMAL_EXTRACTION.
             
         Returns:
             ParseResult: {
@@ -223,6 +249,7 @@ class ResponseParserV2:
             'expected_field': expected_field,
             'question_id': question_id,
             'turn_id': turn_id,  # CONTRACT: Added for provenance
+            'extraction_mode': mode.value,  # V3.1: Extraction mode for instrumentation
             'timestamp': timestamp,
             'raw_llm_output': None,
             'error_message': None,
