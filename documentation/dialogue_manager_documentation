@@ -1,412 +1,99 @@
-## Dialogue Manager V2 (dialogue_manager_v2.py)
+# Documentation Update Summary
 
-**Role:** Orchestrator coordinating all modules  
-**Key characteristic:** Functional core - stateless per-turn transformation
+## File: Dialogue_manager_documentation
 
----
+### Changes Made
 
-### Core Responsibilities
+#### 1. Added New Section: "Commit Guard (V3 - RP Refactor)"
+**Location:** Between "Mode Management" and "TurnResult Structure"
 
-1. **Command Handling**
-   - Receives commands (StartConsultation, UserTurn, FinalizeConsultation)
-   - Rehydrates StateManager from state snapshot
-   - Returns structured results (TurnResult, FinalReport, IllegalCommand)
+**Content Added:**
+- Purpose and rationale for commit guard
+- Guard placement (DialogueManager, not RP or StateManager)
+- Authority chain: RP parses → DM decides → SM executes
+- `_commit_allowed(mode)` method documentation
+  - Current behavior (stub returns True)
+  - Future behavior (mode-based blocking)
+  - Guard scope (episode vs shared fields)
+- `_log_commit_block()` method documentation
+  - Structured logging format
+  - Audit trail purpose
+- Two-phase field routing logic
+  - Phase 1: Classify and buffer
+  - Phase 2: Guarded commit (single decision point)
+- Blocked data handling semantics
+- Mode parameter threading
+- Benefits and design rationale
+- Out of scope items
 
-2. **Question-Answer Orchestration**
-   - Calls ResponseParser with multi-question metadata window
-   - Routes extracted fields using EpisodeClassifier
-   - Marks questions as satisfied based on extracted fields
-   - Calls QuestionSelector to determine next question
+#### 2. Updated Section: "Turn Processing Flow"
+**Step 6: Field Routing**
 
-3. **Episode Management**
-   - Handles episode transitions with retry logic
-   - Detects when episodes are complete
-   - Creates new episodes as needed
+**Changed from:**
+- Simple routing description with classify_field calls
 
-4. **Mode Management (V3)**
-   - Extracts current conversation mode from state
-   - Determines next mode via `_determine_next_mode()` (no-op placeholder in V3)
-   - Updates StateManager with mode changes
-   - Tracks mode transitions in turn metadata
+**Changed to:**
+- V3+ Commit Guard reference
+- Mode enum conversion
+- Two-phase routing process
+- Reference to full Commit Guard section
 
-5. **Output Generation**
-   - Generates final JSON (via JSONFormatter)
-   - Generates summary (via SummaryGenerator)
-   - Returns both canonical and clinical views
+#### 3. Updated Section: "Dependencies"
+**Added subsection:** "Module Separation (V3 Commit Guard)"
 
----
+**Content:**
+- ResponseParser: Pure extraction, no guard logic
+- DialogueManager: Decides commits via `_commit_allowed()`
+- StateManager: Blindly accepts writes (no rejection logic)
 
-### Initialization
+#### 4. Updated Section: "Design Principles"
+**Added new principle #6:** "Authority Boundaries (V3+)"
 
-**Cached at Init:**
-- Module references (QuestionSelector, ResponseParser, etc.)
-- EpisodeHypothesisGeneratorStub instance (stateless, safe to cache)
-- Symptom category field names (extracted from ruleset gating questions)
-- Fieldâ†’question mappings (for satisfaction tracking)
+**Content:**
+- RP parses, DM decides, SM executes
+- Guard lives where policy lives (DialogueManager)
+- Parsed ≠ Committed (explicit distinction)
 
-**Symptom Categories Extraction:**
-- Pulls field names from `selector.ruleset['sections']['gating_questions']`
-- Cached as instance variable for all parse calls
-- Fails fast with ValueError if:
-  - Gating questions section missing or empty
-  - Gating questions lack 'field' attributes
-  - Ruleset structure invalid
+#### 5. Updated Section: "Version History"
+**Added:** V4.2 entry
 
-**Field Mapping Cache (V4):**
-- Derives `_question_to_field` mapping (question_id â†’ field_name)
-- Builds `_field_to_questions` reverse mapping (field_name â†’ frozenset[question_ids])
-- Frozen as immutable frozensets for type safety
-- Used to mark questions satisfied when fields extracted
-
-**Not Cached:**
-- Consultation state
-- Dialogue history  
-- Current episode tracking
-
----
-
-### Public API
-
-**handle(command: Command) -> TurnResult | FinalReport | IllegalCommand**
-
-The ONLY public method. All interaction via commands.
-
-**Command Types:**
-- `StartConsultation`: Initialize new consultation
-- `UserTurn`: Process user response
-- `FinalizeConsultation`: Generate final outputs
-
----
-
-### Turn Processing Flow
-
-**UserTurn Command Processing:**
-
-1. **State Rehydration**
-   - Deserialize state snapshot into StateManager
-   - Extract current episode ID, turn count, mode
-
-2. **Mode Management**
-   - Extract current mode from state
-   - Call `_determine_next_mode()` (returns unchanged mode in V3)
-   - Update StateManager with next mode
-
-3. **Turn Type Detection**
-   - first_question: state is None (new consultation)
-   - episode_transition: awaiting_episode_transition=True
-   - regular_turn: standard question answering
-
-4. **Episode Hypothesis Generation (V3+, regular turns only)**
-   - Call `episode_hypothesis_generator.generate_hypothesis()`
-   - Pass user_utterance and current_episode_context (None for now)
-   - Log generated signal (hypothesis_count, pivot_detected)
-   - Signal stored but not yet acted upon (awaiting Episode Hypothesis Manager)
-   - Future: EHM will consume signal for mode transitions
-
-5. **Response Parsing**
-   - Get current pending question
-   - Fetch next 3 questions for metadata window
-   - Call parser with extended context for multi-field extraction
-   - Extract outcome, fields, parse_metadata
-
-6. **Field Routing**
-   - For each extracted field:
-     - Call `EpisodeClassifier.classify_field()`
-     - Route to episode storage (episode fields)
-     - Route to shared storage (shared fields)
-     - Log unknown fields (quarantine in metadata)
-
-7. **Question Satisfaction Tracking (V4)**
-   - For each extracted field:
-     - Look up associated question IDs via `_field_to_questions`
-     - Mark all associated questions as satisfied
-     - Log satisfaction events
-   - Mark pending question as answered (separate from satisfaction)
-   - **Invariant:** `questions_answered âŠ† questions_satisfied`
-
-8. **Trigger & Block Management**
-   - Check for newly activated follow-up blocks
-   - Check if current blocks completed
-
-9. **Next Question Selection**
-   - Get episode data for selector
-   - Call QuestionSelector.get_next_question()
-   - If None: episode complete â†’ transition question
-
-10. **Response Construction**
-   - Build TurnResult with system output
-   - Include state snapshot (canonical storage)
-   - Include clinical output (for display)
-   - Include debug info and metadata
-
----
-
-### Question Satisfaction Model (V4)
-
-**Semantic Distinction:**
-
-- **questions_answered**: Which questions were explicitly asked (audit trail)
-- **questions_satisfied**: Which questions have their data obtained (control flow)
-- **Field provenance** (V5+): Where each field value came from
-
-**Flow Example:**
+**Content:**
 ```
-Question: "Is the vision loss in one eye or both?" (vl_2)
-Answer: "one eye, the right one"
-Parser extracts:
-  - vl_single_eye = "single" (field for vl_2)
-  - vl_laterality = "right" (field for vl_3)
-
-System marks:
-  - vl_2 as satisfied (via vl_single_eye field)
-  - vl_3 as satisfied (via vl_laterality field)
-  - vl_2 as answered (it was explicitly asked)
-
-Result:
-  - questions_answered = {vl_2}
-  - questions_satisfied = {vl_2, vl_3}
-  - Next question skips vl_3 (already satisfied)
+V4.2: RP commit guard refactor - centralized episode write policy in DialogueManager
 ```
 
-**Benefits:**
-- Prevents redundant questions when info volunteered
-- Maintains audit trail of what was asked
-- Supports future clarification workflows
-- Enables provenance tracking
+### Documentation Structure
 
----
+The Commit Guard section provides:
+1. High-level purpose
+2. Architectural placement rationale
+3. Method-level documentation
+4. Implementation details (two-phase logic)
+5. Future activation path
+6. Design benefits
 
-### Episode Hypothesis Generation (V3+)
+### Cross-References
 
-**Purpose:**
-- Detect episode ambiguity and pivot behavior in user utterances
-- Generate structured signals for Episode Hypothesis Manager (future)
-- Enable safe multi-episode narrative handling
+The documentation now includes:
+- Reference from Turn Processing Flow to Commit Guard section
+- Module separation principles in Dependencies
+- Authority boundaries in Design Principles
+- Version tracking in Version History
 
-**Current Implementation:**
-- Stub using simple keyword matching (will be replaced by LLM)
-- Called on every regular turn in `_process_regular_turn()`
-- Signal logged but not yet acted upon
+### Completeness
 
-**Signal Structure (EpisodeHypothesisSignal):**
-```python
-{
-    'hypothesis_count': int,           # 0, 1, or >1 episodes detected
-    'pivot_detected': bool,            # True if abandonment phrase found
-    'confidence_band': ConfidenceBand, # LOW, MEDIUM, HIGH (placeholder)
-    'pivot_confidence_band': ConfidenceBand  # Confidence in pivot (placeholder)
-}
-```
+All aspects of the commit guard refactor are now documented:
+- ✓ Guard methods (_commit_allowed, _log_commit_block)
+- ✓ Routing refactor (two-phase logic)
+- ✓ Mode parameter threading
+- ✓ Shared field bypass
+- ✓ Blocked data handling
+- ✓ Future activation path
+- ✓ Design rationale
+- ✓ Authority boundaries
 
-**Stub Logic:**
-- **hypothesis_count:**
-  - 0 if input is empty/whitespace-only
-  - 1 otherwise (default)
-  - Future: semantic analysis of temporal markers and episode boundaries
-  
-- **pivot_detected:**
-  - True if any abandonment phrase found: "actually", "forget", "wait", "no", "different"
-  - Case-insensitive substring matching
-  - False positives expected (e.g., "I don't know" contains "no")
-  - Future: context-aware semantic pivot detection
-
-- **Confidence bands:**
-  - Currently hardcoded to HIGH (placeholders)
-  - Future: calibrated confidence scores from LLM
-
-**Integration Flow:**
-```
-User input â†’ EHG.generate_hypothesis() â†’ EpisodeHypothesisSignal
-                                              â†“
-                                      (Currently logged only)
-                                              â†“
-                                      Future: Episode Hypothesis Manager
-                                              â†“
-                                      Mode transition decisions
-```
-
-**Error Handling:**
-- Never raises exceptions from `generate_hypothesis()`
-- Invalid inputs â†’ logged warning + safe default signal
-- Safe default: hypothesis_count=1, pivot_detected=False, confidence=HIGH
-
-**TODO (Future Work):**
-- [ ] Implement Episode Hypothesis Manager to consume signals
-- [ ] Pass actual current_episode_context to EHG
-- [ ] Replace stub with LLM-driven semantic analysis
-- [ ] Implement confidence calibration
-- [ ] Add provenance tracking (which utterance span triggered signal)
-
-**Current Status:**
-- Plumbing complete: signals generated on every regular turn
-- Not yet actionable: EHM module does not exist
-- Mode transitions still use placeholder logic (no-op)
-- Safe to deploy: stub fails gracefully, doesn't affect existing flow
-
----
-
-### Episode Transitions
-
-**Trigger:**
-- QuestionSelector returns None (no more questions for current episode)
-
-**Behavior:**
-- System asks: "Have you had any other episodes of eye-related problems you would like to discuss?"
-- Sets `awaiting_episode_transition=True` in turn metadata
-- Next turn processes transition response
-
-**Retry Logic:**
-- Max 2 retries for ambiguous answers
-- Defaults to "no more episodes" if max retries reached
-- Creates new episode if user says "yes"
-- Finalizes consultation if user says "no"
-
----
-
-### Mode Management (V3)
-
-**Mode Authority:**
-- DialogueManager owns all mode transitions via `_determine_next_mode()`
-- Currently no-op placeholder - mode never changes (sticky)
-- Prepared for future Episode Hypothesis Manager (EHM) integration
-
-**Episode Hypothesis Generation (V3+):**
-- `EpisodeHypothesisGeneratorStub` generates signals on every regular turn
-- Signal contains:
-  - `hypothesis_count`: Number of episode hypotheses detected (0, 1, or >1)
-  - `pivot_detected`: Boolean indicating abandonment/pivot behavior
-  - `confidence_band`: Confidence in hypothesis count (placeholder: HIGH)
-  - `pivot_confidence_band`: Confidence in pivot detection (placeholder: HIGH)
-- Current stub uses simple keyword matching:
-  - Abandonment phrases: "actually", "forget", "wait", "no", "different"
-  - Defaults to hypothesis_count=1 (or 0 for empty input)
-- Signal logged but not yet acted upon (awaiting EHM implementation)
-- Future: Real LLM-driven EHG will perform semantic episode analysis
-
-**Mode Threading:**
-- Extracts current mode from state snapshot on each turn
-- Calls `_determine_next_mode()` (returns unchanged mode in V3)
-- Updates StateManager with next mode
-- Tracks mode changes via `turn_metadata['mode_changed']`
-
-**Initialization Policy:**
-- New consultations start in `MODE_DISCOVERY`
-- Explicit policy decision (not heuristic)
-
-**Guardrails:**
-- TypeError raised if current_mode not ConversationMode enum
-- StateManager validates mode on set (fail-fast)
-- Prevents silent corruption during refactors
-
-**Future (V3+ with EHG + EHM):**
-- Episode Hypothesis Manager (EHM) will consume EHG signals
-- EHM will drive mode transitions based on signal + current mode
-- `MODE_CLARIFICATION` is sticky until explicit EHM directive
-- No implicit mode changes based on convenience
-- EHM owns clarification lifecycle
-
----
-
-### TurnResult Structure
-
-```python
-{
-    'system_output': str,           # Question text or message
-    'state_snapshot': dict,          # Canonical state (for persistence)
-    'clinical_output': dict,         # Clinical view (for display)
-    'debug': {
-        'parser_output': dict,       # Parser results
-        'errors': list,              # Accumulated errors
-        'routing_info': list         # Field routing decisions
-    },
-    'turn_metadata': {
-        'turn_count': int,
-        'episode_id': int,
-        'consultation_id': str,
-        'awaiting_episode_transition': bool,  # UI state
-        'pending_question': dict,             # UI state
-        'conversation_mode': str,             # Current mode
-        'mode_changed': bool                  # Mode transition flag
-    },
-    'consultation_complete': bool
-}
-```
-
----
-
-### Error Handling
-
-**Philosophy:** Best-effort continuation
-
-- Errors logged but don't crash consultation
-- Errors accumulated in `self.errors` list
-- Returned in `TurnResult.debug`
-- Consultation continues even with parser failures
-- Failed field routing quarantined in turn metadata
-
----
-
-### State Management Contract
-
-**Not Held Between Turns:**
-- Consultation state
-- current_episode_id (tracked internally during turn only)
-- Dialogue history
-
-**Stored in StateManager:**
-- All episode data (fields, questions_answered, questions_satisfied)
-- Shared data
-- Follow-up block tracking
-- Conversation mode
-
-**Stored in Turn Metadata (UI state):**
-- turn_count
-- awaiting_episode_transition
-- pending_question
-- mode_changed flag
-
-**Explicit Parameter Passing:**
-- No hidden state
-- All state passed via command.state
-- Functional core design
-
----
-
-### Dependencies
-
-**Required Modules:**
-- StateManagerV2: Storage and retrieval
-- QuestionSelectorV2: Next question logic, field mappings
-- ResponseParserV2: Field extraction
-- EpisodeClassifier: Field routing decisions
-- JSONFormatterV2: Final JSON generation
-- SummaryGeneratorV2: Summary generation
-- EpisodeHypothesisGeneratorStub: Episode ambiguity detection (V3+)
-
-**Module Validation:**
-- All modules validated at init for required methods
-- Fails fast with TypeError if interfaces missing
-
----
-
-### Design Principles
-
-1. **Functional Core**: No state held between turns
-2. **Thin Orchestration**: Business logic in specialized modules
-3. **Deterministic**: Same input â†’ same output
-4. **Fail Fast**: Validate early, raise clear errors
-5. **Separation of Concerns**: 
-   - DialogueManager = coordination
-   - StateManager = storage
-   - QuestionSelector = protocol
-   - ResponseParser = extraction
-   - EpisodeClassifier = routing logic
-
----
-
-### Version History
-
-**V2:** Multi-episode support, functional core architecture  
-**V3:** Mode management integration (placeholder), Episode Hypothesis Generator stub integrated  
-**V4:** Question satisfaction model, fieldâ†’question mapping  
-**V4.1:** EHG plumbing complete - signals generated but not acted upon (awaiting EHM)
+The documentation is ready for:
+- Developer handoff
+- Future V3 integration
+- Architecture review
+- Training materials
