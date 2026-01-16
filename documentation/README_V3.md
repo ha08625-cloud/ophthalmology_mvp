@@ -1,9 +1,8 @@
 **Purpose:** AI-powered ophthalmology consultation system
-**Architecture:** 7 modules + 3 config files, multi-episode structure
-**Status:** V3.0 prototype - functional core with Flask transport layer
 
 ## Quick Orientation
 
+**Architecture:** LLM driven modules parse user responses and generate clinical summaries, but determinstic modules and clinical datasets dicate question flow and decisions
 **Project Type:** Prototype exploring architecture for future clinical product. Single developer. Not intended to aim for production-readiness
 
 ## File Locations
@@ -33,6 +32,7 @@
 
 **Key work for this version:**
 - create intake layer that manages multi-episode ambiguity
+- An episode in this system represents a patient-perceived problem narrative, not a clinically validated event
 
 ## Design Decisions
 1. Freeze Meaning, Not Implementation
