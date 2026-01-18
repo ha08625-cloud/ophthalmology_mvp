@@ -343,15 +343,15 @@
             "required": "conditional",
             "description": "How often each flare-up lasts (for intermittent patterns)"
           },
-          "h_interval_severity": {
-            "type": "text",
-            "required": "conditional",
-            "description": "Headache severity between flare-ups (if not complete resolution)"
-          },
           "h_worst_severity": {
             "type": "text",
             "required": "conditional",
             "description": "Worst headache severity experienced"
+          },
+          "h_interval_severity": {
+            "type": "text",
+            "required": "conditional",
+            "description": "Headache severity between flare-ups (if not complete resolution)"
           },
           "h_location": {
             "type": "text",
