@@ -146,7 +146,7 @@
           "is_false": "can_see_moving_water"
         }
       ]
-    },
+    }
   },
   
 
@@ -198,7 +198,7 @@
         ]
       },
       "activates": "block_6"
-    },
+    }
   },
   
 

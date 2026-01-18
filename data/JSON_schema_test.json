@@ -356,8 +356,8 @@
         "chills": {"type": "boolean"},
         "chills_details": {"type": "text"},
         "fevers": {"type": "boolean"},
-        "fever_details": {"type": "text"},
-      },
+        "fever_details": {"type": "text"}
+      }
     }
   },
   
