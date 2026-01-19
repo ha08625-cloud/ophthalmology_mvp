@@ -1,7 +1,7 @@
 # System Architecture
 
 **Version:** 3.0  
-**Last Updated:** January 2026
+**Last Updated:** 19 January 2026
 
 ## What This System Does
 
@@ -9,7 +9,7 @@ Multi-episode ophthalmology consultation system that conducts structured medical
 
 ## Architecture Pattern: Orchestration
 
-The Orchestrator module is the Dialogue Manager. The other 6 modules don't call each other - they're independent workers that the Dialogue Manager directs.
+The Orchestrator module is the Dialogue Manager. The other core modules don't call each other - they're independent workers that the Dialogue Manager directs.  They would only call utility modules
 
 **Call hierarchy:**
 1. Transport Layer (Flask/Console)
@@ -127,7 +127,7 @@ The Orchestrator module is the Dialogue Manager. The other 6 modules don't call 
 
 ## Critical Data Flows
 
-### Per-Turn Flow (Simplified)
+### Core Extraction Data Flow Per Turn (Simplified)
 
 1. **Transport Layer** passes user input + state snapshot to Dialogue Manager
 2. **Dialogue Manager** rehydrates State Manager from snapshot
@@ -232,69 +232,35 @@ Flask/Console               â†’ Dialogue Manager only
    - Signals logged but not acted upon
    - Interface ready for future LLM replacement
 
-4. **Clarification Transcript Buffer** (clarification_transcript_buffer.py)
-   - Records clarification questions and responses
-   - Marks which entries are replayable for clinical extraction
-   - Not yet active in dialogue flow
-
-5. **Evidence Span Validator** (evidence_span_validator.py)
-   - Deterministic validation of mention objects against source text
-   - Guards against LLM hallucination
-   - Not yet active
-
-6. **Field-Level Provenance Tagging** (state_manager_v2.py)
+4. **Field-Level Provenance Tagging** (state_manager_v2.py)
    - Tracks which turn/utterance each field came from
    - Passive tracking - not yet used for replay or validation
 
-**In Progress:**
-- Episode Hypothesis Manager (deterministic mode transition logic)
-- Clarification Parser (mention object extraction)
-- Acting on EHG signals for mode transitions
-- Passing current_episode_context to EHG
+5. **Episode Safety Status** (episode_safety_status.py)
+   - Deterministic interpretation of probabilistic EHG signals
+   - Pure function: assess_episode_safety() collapses EpisodeHypothesisSignal into finite safety enum
+   - Three outcomes: SAFE_TO_EXTRACT, AMBIGUOUS_MULTIPLE, AMBIGUOUS_PIVOT
+   - Intentionally conservative - ignores confidence bands
+   - Boundary between probabilistic inference (EHG) and deterministic control (Dialogue Manager)
+  
+6. **Coercion prompt generation** (episode_narrowing_prompt.py)
+   - Creates statements that acknowledge ambiguity and redirect patient back to the current episode
+   - If episode_safety_status.py returns AMBIGUOUS_MULTIPLE or AMBIGUOUS_PIVOT, then RP output discarded and episode_narrowing_prompt.py called
+   - pending_question is appended to the end of the question by the dialogue manager
 
-**Not Started:**
+**In Progress:**
 - Real LLM-driven Episode Hypothesis Generator
-- Clarification question generation
-- Clarification replay semantics
-- Multi-episode clarification flow
+- Passing current_episode_context to EHG for semantic comparison
 
 ### V3 Architecture Principles
 
 1. **Immediate Validation Policy:** Episode hypotheses must be confirmed or negated before clinical questioning continues. No floating or long-lived hypotheses.
-
 2. **Safety Over Smoothness:** Silent episode mixing is unsafe. Ambiguity must be resolved even if it interrupts conversational flow.
-
-3. **Evidence-Based Extraction:** Every mention object must include verbatim evidence span from user's original text. Deterministic validation guards against hallucination.
-
-4. **Bounded Clarification:** System may attempt clarification a bounded number of times. If patient cannot resolve, default to safer interpretation and proceed.
-
-5. **Parallelism for Latency:** In extraction mode, EHG and Response Parser run in parallel to avoid UX degradation.
-
-### V3 Mode Transition Logic (Planned)
-
-**Discovery Mode:**
-- hypothesis_count = 0 â†’ stay in discovery
-- hypothesis_count > 1 â†’ clarification mode
-- hypothesis_count = 1, high confidence â†’ extraction mode
-- hypothesis_count = 1, low/medium confidence â†’ clarification mode
-
-**Extraction Mode:**
-- hypothesis_count = 0 â†’ discovery mode
-- hypothesis_count > 1 â†’ clarification mode
-- hypothesis_count = 1, low/medium confidence â†’ clarification mode
-- hypothesis_count = 1, high confidence, pivot_detected = true â†’ clarification mode
-- hypothesis_count = 1, high confidence, pivot_detected = false â†’ stay in extraction
-
-**Clarification Mode:**
-- Entered via multiple paths (low confidence, >1 hypothesis, pivot detected)
-- Only explicit user confirmation exits clarification
-- Emergency escape if patient unable to disambiguate
-- EHG passive during clarification
+3. **Parallelism for Latency:** In extraction mode, EHG and Response Parser run in parallel to avoid UX degradation.
 
 ### V3 Known Limitations
 
-1. EHG stub uses simple keyword matching - may have false positives (e.g., "I don't know" contains "no")
-2. Confidence bands not yet meaningful (hardcoded to HIGH)
-3. No access to current_episode_context for semantic comparison
-4. Mode transitions wired but not yet driving conversation flow
-5. Clarification questions not yet implemented
+1. Aim of V3 is to create an episode ambiguity handling layer that simply detects episode ambiguity and then coerces the patient back to talking about the current episode
+2. This aim is chosen at the cost of UX because we are working with very limited resources (12GB GPU and maximum 7B size model), so the natural language processing layer will never be robust enough to truly resolve episode ambiguity
+3. Once out of proof of concept and towards a production ready medical system, we will have access to higher grade hardware (2x32GB 5090 Geforce GPUs that can run a 70B size model)
+4. That will allow us to create a much more robust episode ambiguity layer which actually resolves episode ambiguity, for example creating new episodes and switching between them
