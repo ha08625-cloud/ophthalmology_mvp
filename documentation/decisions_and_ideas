@@ -1,0 +1,22 @@
+Unsolved problems
+  1. How to deal with patient questions
+  2. How to deal with irrelevant, empty or garbage responses
+
+chief complaint in discovery mode as an episode label
+
+Patient descriptor for each symptom category - can reuse patient natural language
+
+What is an "episode"
+- In our system an episode is patient defined: it is a subjective phenomenological segment
+- Rationale:
+- Let's say for example that someone is experiencing migraines and then has an episode of optic neuritis
+- Those migraines might have occurred from a month ago til now (let's say the patient had 6 migraines during that time)
+- The optic neuritis might have started 2 weeks ago, right in the middle of the block of migraines
+- Those are distinct issues but temporally not separated at all, in fact they are on top of each other
+- They might also have other overlapping symptoms
+- We don't expect the user to clinically separate them - they dont have the expertise
+- We also dont expect the system to clinically separate them - it also doesnt have the expertise
+- The solution is that we classify it by the user's experience: their phenomenological classification of the symptoms
+- They experience the migraine headache and the optic neuritis as different and so we treat them as separate episodes or issues or problems
+- The patient will naturally gravitate towards describing those things as separate episodes, so we may as well roll with it rather than forcing them to conform to a different definition of episodes
+- It's not a temporal separation, it's not a clinical separation, it's a subjective phenomenological separation
