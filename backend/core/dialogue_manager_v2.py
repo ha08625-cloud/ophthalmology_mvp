@@ -30,9 +30,7 @@ from typing import Optional, Dict, Any, List
 from helpers import generate_consultation_id, generate_consultation_filename
 from episode_classifier import classify_field
 from conversation_modes import ConversationMode
-from episode_hypothesis_generator_stub import EpisodeHypothesisGeneratorStub
-from episode_safety_status import assess_episode_safety, EpisodeSafetyStatus
-from episode_narrowing_prompt import build_episode_narrowing_prompt
+from episode_hypothesis_generator import EpisodeHypothesisGenerator
 from display_helpers import format_state_for_display
 
 # Command and result types
@@ -78,7 +76,7 @@ class DialogueManagerV2:
     }
     
     def __init__(self, state_manager_class, question_selector, response_parser,
-                 json_formatter, summary_generator):
+                 json_formatter, summary_generator, episode_hypothesis_generator):
         """
         Initialize Dialogue Manager V2 with module references (NOT instances)
         
@@ -98,13 +96,14 @@ class DialogueManagerV2:
             response_parser: ResponseParserV2 instance (stateless, safe to cache)
             json_formatter: JSONFormatterV2 instance (stateless, safe to cache)
             summary_generator: SummaryGeneratorV2 instance (stateless, safe to cache)
+            episode_hypothesis_generator: EpisodeHypothesisGenerator instance (stateless, safe to cache)
             
         Raises:
             TypeError: If any required module is missing or wrong type
         """
         # Validate module interfaces
         self._validate_modules(state_manager_class, question_selector, response_parser,
-                               json_formatter, summary_generator)
+                               json_formatter, summary_generator, episode_hypothesis_generator)
         
         # Cache module references (configs only, no state)
         self.state_manager_class = state_manager_class
@@ -113,9 +112,9 @@ class DialogueManagerV2:
         self.json_formatter = json_formatter  # Stateless, safe to cache
         self.summary_generator = summary_generator  # Stateless, safe to cache
         
-        # Episode Hypothesis Generator (stub for now)
+        # Episode Hypothesis Generator (LLM-powered)
         # Stateless, safe to cache
-        self.episode_hypothesis_generator = EpisodeHypothesisGeneratorStub()
+        self.episode_hypothesis_generator = episode_hypothesis_generator
         
         # Extract symptom categories from ruleset (cached at init)
         self.symptom_categories = self._extract_symptom_categories(question_selector)
@@ -144,7 +143,7 @@ class DialogueManagerV2:
         )
     
     def _validate_modules(self, state_manager_class, question_selector, response_parser,
-                         json_formatter, summary_generator):
+                         json_formatter, summary_generator, episode_hypothesis_generator):
         """Validate module interfaces"""
         # Validate QuestionSelectorV2 interface
         if not (hasattr(question_selector, 'get_next_question') and 
@@ -173,6 +172,11 @@ class DialogueManagerV2:
         if not (hasattr(summary_generator, 'generate') and 
                 callable(getattr(summary_generator, 'generate', None))):
             raise TypeError("summary_generator must have callable generate() method")
+        
+        # Validate EpisodeHypothesisGenerator interface
+        if not (hasattr(episode_hypothesis_generator, 'generate_hypothesis') and 
+                callable(getattr(episode_hypothesis_generator, 'generate_hypothesis', None))):
+            raise TypeError("episode_hypothesis_generator must have callable generate_hypothesis() method")
     
     def _commit_allowed(self, mode: ConversationMode) -> bool:
         """
@@ -294,6 +298,53 @@ class DialogueManagerV2:
         
         logger.info(f"Extracted {len(symptom_fields)} symptom categories from ruleset")
         return symptom_fields
+    
+    def _build_episode_context_for_ehg(
+        self,
+        state_manager,
+        episode_id: int
+    ) -> Dict[str, Any]:
+        """
+        Build current episode context for Episode Hypothesis Generator.
+        
+        Provides context about what the current episode is about, so EHG can
+        detect when the patient pivots to a different problem.
+        
+        V1 (Simple): Just active symptom categories
+        Future: Add presenting complaint, temporal context, laterality, etc.
+        
+        Args:
+            state_manager: Rehydrated state manager
+            episode_id: Current episode ID
+            
+        Returns:
+            dict: Episode context for EHG
+                {
+                    "active_symptom_categories": ["visual_loss", "headache", ...]
+                }
+        """
+        active_categories = []
+        
+        try:
+            episode_data = state_manager.get_episode_for_selector(episode_id)
+            
+            # Check each symptom category field
+            # self.symptom_categories contains field names like 'vl_present', 'cp_present'
+            for field_name in self.symptom_categories:
+                value = episode_data.get(field_name)
+                if value is True:
+                    # Extract category name from field (e.g., 'vl_present' -> 'visual_loss')
+                    # For now, just use the prefix
+                    category = field_name.replace('_present', '')
+                    active_categories.append(category)
+                    
+        except Exception as e:
+            logger.warning(f"Failed to build episode context for EHG: {e}")
+            # Return empty context on error - EHG will handle gracefully
+        
+        return {
+            "active_symptom_categories": active_categories
+        }
     
     # =========================================================================
     # CONVERSATION MODE MANAGEMENT (V3)
@@ -833,67 +884,26 @@ class DialogueManagerV2:
         if pending_question is None:
             raise ValueError("No pending question in state")
         
+        # V3: Build current episode context for EHG
+        # Simple V1: just the active symptom categories
+        current_episode_context = self._build_episode_context_for_ehg(
+            state_manager=state_manager,
+            episode_id=current_episode_id
+        )
+        
         # V3: Generate episode hypothesis signal
-        # TODO: Pass actual current_episode_context (episode summary, presenting complaint, etc)
+        # TODO: Episode Hypothesis Manager will consume this signal for mode transitions
         ehg_signal = self.episode_hypothesis_generator.generate_hypothesis(
             user_utterance=user_input,
-            current_episode_context=None  # TODO: Extract from state_manager
+            last_system_question=pending_question.get('question'),
+            current_episode_context=current_episode_context
         )
         logger.debug(
             f"EHG signal: hypothesis_count={ehg_signal.hypothesis_count}, "
             f"pivot_detected={ehg_signal.pivot_detected}"
         )
-        
-        # V3: Assess episode safety from EHG signal
-        safety_status = assess_episode_safety(ehg_signal)
-        logger.debug(f"Episode safety status: {safety_status.value}")
-        
-        # V3: Episode ambiguity handling - coerce back to current episode
-        # If ambiguity detected, generate narrowing prompt and block RP commit
-        # Stay in MODE_EPISODE_EXTRACTION, re-ask pending question
-        if safety_status != EpisodeSafetyStatus.SAFE_TO_EXTRACT:
-            # Generate coercion prompt
-            coercion_prompt = build_episode_narrowing_prompt(safety_status)
-            
-            # Append the pending question to redirect focus
-            system_output = f"{coercion_prompt}\n\nFor the current problem, {pending_question['question']}"
-            
-            logger.warning(
-                f"Episode ambiguity detected: {safety_status.value}. "
-                f"Coercing back to episode {current_episode_id}, "
-                f"question '{pending_question['id']}'"
-            )
-            
-            # Return early - do NOT run parser, do NOT commit any data
-            # Re-present the same pending question
-            return self._build_turn_result(
-                system_output=system_output,
-                state_manager=state_manager,
-                consultation_id=consultation_id,
-                turn_count=turn_count + 1,
-                current_episode_id=current_episode_id,
-                awaiting_first_question=False,
-                awaiting_episode_transition=False,
-                pending_question=pending_question,  # Same question again
-                errors=errors,
-                debug={
-                    'episode_ambiguity_detected': True,
-                    'safety_status': safety_status.value,
-                    'ehg_signal': {
-                        'hypothesis_count': ehg_signal.hypothesis_count,
-                        'confidence_band': ehg_signal.confidence_band.value,
-                        'pivot_detected': ehg_signal.pivot_detected,
-                        'pivot_confidence_band': ehg_signal.pivot_confidence_band.value
-                    },
-                    'coercion_applied': True,
-                    'parser_output_discarded': True
-                },
-                consultation_complete=False,
-                previous_mode=previous_mode
-            )
-        
-        # Safety status is SAFE_TO_EXTRACT - proceed with normal flow
-        logger.debug("Episode safety check passed - proceeding with extraction")
+        # Note: Signal generated but not yet acted upon. Episode Hypothesis Manager
+        # will be wired in future to consume this signal and drive mode transitions.
         
         # Get next questions for multi-question metadata window
         next_questions = self.selector.get_next_n_questions(
