@@ -1,7 +1,7 @@
 # System Architecture
 
-**Version:** 3.0  
-**Last Updated:** 19 January 2026
+**Version:** 4.0  
+**Last Updated:** 21 January 2026
 
 ## What This System Does
 
@@ -24,7 +24,7 @@ The Orchestrator module is the Dialogue Manager. The other core modules don't ca
    - Question Selector  
    - Response Parser
    - Episode Classifier
-   - Episode Hypothesis Generator (stub)
+   - Episode Hypothesis Generator
    - JSON Formatter
    - Summary Generator
 
@@ -75,7 +75,7 @@ The Orchestrator module is the Dialogue Manager. The other core modules don't ca
 
 - Takes patient's free-text response
 - Calls HuggingFace LLM to extract structured fields
-- Maps natural language to standardized values ("right eye" â†’ "monocular_right")
+- Maps natural language to standardized values ("in my right eye" to "vl_laterality monocular_right")
 - Returns dictionary of extracted fields plus metadata
 - Handles ambiguous/unclear responses
 - Best-effort: returns empty dict if extraction fails, consultation continues
@@ -168,16 +168,16 @@ Two parallel outputs generated:
 
 **JSON Output:**
 ```
-State Manager â†’ export_clinical_view() 
-              â†’ JSON Formatter 
-              â†’ schema-compliant JSON file
+State Manager export_clinical_view() 
+              JSON Formatter 
+              schema-compliant JSON file
 ```
 
 **Summary Output:**
 ```
-State Manager â†’ export_for_summary()
-              â†’ Summary Generator (LLM)
-              â†’ clinical narrative text file
+State Manager export_for_summary()
+              Summary Generator (LLM)
+              clinical narrative text file
 ```
 
 ## Key Design Principles
@@ -221,7 +221,7 @@ Dialogue Manager            All above modules
 Flask/Console               Dialogue Manager only
 ```
 
-## V3: Multi-Episode Architecture (In Progress)
+## V3: Multi-Episode Architecture
 
 **Goal:** Handle realistic patient narratives where multiple episodes are mentioned or switched mid-conversation.
 
