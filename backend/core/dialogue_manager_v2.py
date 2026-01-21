@@ -27,22 +27,25 @@ from typing import Optional, Dict, Any, List
 
 # Flat imports for server testing
 # When copying to local, adjust to: from backend.utils.helpers import ...
-from helpers import generate_consultation_id, generate_consultation_filename
-from episode_classifier import classify_field
-from conversation_modes import ConversationMode
-from episode_hypothesis_generator import EpisodeHypothesisGenerator
-from display_helpers import format_state_for_display
+from backend.utils.helpers import generate_consultation_id, generate_consultation_filename
+from backend.utils.episode_classifier import classify_field
+from backend.utils.conversation_modes import ConversationMode
+from backend.core.episode_hypothesis_generator import EpisodeHypothesisGenerator
+from backend.utils.episode_safety_status import assess_episode_safety, EpisodeSafetyStatus
+from backend.utils.episode_narrowing_prompt import build_episode_narrowing_prompt
+from backend.utils.display_helpers import format_state_for_display
+from backend.utils.prompt_builder import PromptBuilder, create_prompt_spec, PromptMode, PromptBuildError
 
 # Command and result types
 # When copying to local, adjust to: from backend.commands import ...
-from commands import (
+from backend.commands import (
     ConsultationState,
     StartConsultation,
     UserTurn,
     FinalizeConsultation,
     Command
 )
-from results import TurnResult, FinalReport, IllegalCommand
+from backend.results import TurnResult, FinalReport, IllegalCommand
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +75,13 @@ class DialogueManagerV2:
         'id': 'episode_transition',
         'question': 'Have you had any other episodes of eye-related problems you would like to discuss?',
         'field': 'additional_episodes_present',
-        'field_type': 'boolean'
+        'field_type': 'boolean',
+        'field_label': 'additional episodes present',
+        'field_description': 'whether patient has additional distinct episodes to discuss'
     }
     
     def __init__(self, state_manager_class, question_selector, response_parser,
-                 json_formatter, summary_generator, episode_hypothesis_generator):
+                 json_formatter, summary_generator, prompt_builder, episode_hypothesis_generator):
         """
         Initialize Dialogue Manager V2 with module references (NOT instances)
         
@@ -96,6 +101,7 @@ class DialogueManagerV2:
             response_parser: ResponseParserV2 instance (stateless, safe to cache)
             json_formatter: JSONFormatterV2 instance (stateless, safe to cache)
             summary_generator: SummaryGeneratorV2 instance (stateless, safe to cache)
+            prompt_builder: PromptBuilder instance (stateless, safe to cache)
             episode_hypothesis_generator: EpisodeHypothesisGenerator instance (stateless, safe to cache)
             
         Raises:
@@ -103,7 +109,7 @@ class DialogueManagerV2:
         """
         # Validate module interfaces
         self._validate_modules(state_manager_class, question_selector, response_parser,
-                               json_formatter, summary_generator, episode_hypothesis_generator)
+                               json_formatter, summary_generator, prompt_builder, episode_hypothesis_generator)
         
         # Cache module references (configs only, no state)
         self.state_manager_class = state_manager_class
@@ -111,15 +117,13 @@ class DialogueManagerV2:
         self.parser = response_parser      # Stateless, safe to cache
         self.json_formatter = json_formatter  # Stateless, safe to cache
         self.summary_generator = summary_generator  # Stateless, safe to cache
-        
-        # Episode Hypothesis Generator (LLM-powered)
-        # Stateless, safe to cache
-        self.episode_hypothesis_generator = episode_hypothesis_generator
-        
+        self.prompt_builder = prompt_builder  # Stateless, safe to cache
+        self.episode_hypothesis_generator = episode_hypothesis_generator  # Stateless, safe to cache
+               
         # Extract symptom categories from ruleset (cached at init)
         self.symptom_categories = self._extract_symptom_categories(question_selector)
         
-        # Cache fieldÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢question mappings (derived from immutable ruleset)
+        # Cache fieldÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢question mappings (derived from immutable ruleset)
         # Used for marking questions satisfied when fields are extracted
         self._question_to_field = question_selector._question_to_field.copy()
         self._field_to_questions = {}
@@ -143,7 +147,7 @@ class DialogueManagerV2:
         )
     
     def _validate_modules(self, state_manager_class, question_selector, response_parser,
-                         json_formatter, summary_generator, episode_hypothesis_generator):
+                         json_formatter, summary_generator, prompt_builder, episode_hypothesis_generator):
         """Validate module interfaces"""
         # Validate QuestionSelectorV2 interface
         if not (hasattr(question_selector, 'get_next_question') and 
@@ -172,6 +176,11 @@ class DialogueManagerV2:
         if not (hasattr(summary_generator, 'generate') and 
                 callable(getattr(summary_generator, 'generate', None))):
             raise TypeError("summary_generator must have callable generate() method")
+        
+        # Validate PromptBuilder interface
+        if not (hasattr(prompt_builder, 'build') and 
+                callable(getattr(prompt_builder, 'build', None))):
+            raise TypeError("prompt_builder must have callable build() method")
         
         # Validate EpisodeHypothesisGenerator interface
         if not (hasattr(episode_hypothesis_generator, 'generate_hypothesis') and 
@@ -345,6 +354,37 @@ class DialogueManagerV2:
         return {
             "active_symptom_categories": active_categories
         }
+
+    def _get_symptom_category_questions(self) -> List[Dict[str, Any]]:
+        """
+        Get full question dicts for symptom categories.
+        
+        Used to convert symptom categories to FieldSpec for prompt building.
+        Only includes categories that have field_label and field_description.
+        
+        Returns:
+            List of question dicts for symptom category fields that can be
+            used with create_prompt_spec()
+        """
+        if not hasattr(self.selector, 'sections'):
+            return []
+        
+        gating_questions = self.selector.sections.get('gating_questions', [])
+        
+        # Filter to only questions with required prompt metadata
+        valid_questions = []
+        for q in gating_questions:
+            if ('field_label' in q and 
+                'field_description' in q and
+                'field' in q and
+                'field_type' in q):
+                valid_questions.append(q)
+        
+        logger.debug(
+            f"Found {len(valid_questions)}/{len(gating_questions)} symptom categories "
+            "with field labels/descriptions"
+        )
+        return valid_questions
     
     # =========================================================================
     # CONVERSATION MODE MANAGEMENT (V3)
@@ -902,8 +942,57 @@ class DialogueManagerV2:
             f"EHG signal: hypothesis_count={ehg_signal.hypothesis_count}, "
             f"pivot_detected={ehg_signal.pivot_detected}"
         )
-        # Note: Signal generated but not yet acted upon. Episode Hypothesis Manager
-        # will be wired in future to consume this signal and drive mode transitions.
+        
+        # V3: Assess episode safety from EHG signal
+        safety_status = assess_episode_safety(ehg_signal)
+        logger.debug(f"Episode safety status: {safety_status.value}")
+        
+        # V3: Episode ambiguity handling - coerce back to current episode
+        # If ambiguity detected, generate narrowing prompt and block RP commit
+        # Stay in MODE_EPISODE_EXTRACTION, re-ask pending question
+        if safety_status != EpisodeSafetyStatus.SAFE_TO_EXTRACT:
+            # Generate coercion prompt
+            coercion_prompt = build_episode_narrowing_prompt(safety_status)
+            
+            # Append the pending question to redirect focus
+            system_output = f"{coercion_prompt}\n\nFor the current problem, {pending_question['question']}"
+            
+            logger.warning(
+                f"Episode ambiguity detected: {safety_status.value}. "
+                f"Coercing back to episode {current_episode_id}, "
+                f"question '{pending_question['id']}'"
+            )
+            
+            # Return early - do NOT run parser, do NOT commit any data
+            # Re-present the same pending question
+            return self._build_turn_result(
+                system_output=system_output,
+                state_manager=state_manager,
+                consultation_id=consultation_id,
+                turn_count=turn_count + 1,
+                current_episode_id=current_episode_id,
+                awaiting_first_question=False,
+                awaiting_episode_transition=False,
+                pending_question=pending_question,  # Same question again
+                errors=errors,
+                debug={
+                    'episode_ambiguity_detected': True,
+                    'safety_status': safety_status.value,
+                    'ehg_signal': {
+                        'hypothesis_count': ehg_signal.hypothesis_count,
+                        'confidence_band': ehg_signal.confidence_band.value,
+                        'pivot_detected': ehg_signal.pivot_detected,
+                        'pivot_confidence_band': ehg_signal.pivot_confidence_band.value
+                    },
+                    'coercion_applied': True,
+                    'parser_output_discarded': True
+                },
+                consultation_complete=False,
+                previous_mode=previous_mode
+            )
+        
+        # Safety status is SAFE_TO_EXTRACT - proceed with normal flow
+        logger.debug("Episode safety check passed - proceeding with extraction")
         
         # Get next questions for multi-question metadata window
         next_questions = self.selector.get_next_n_questions(
@@ -911,14 +1000,46 @@ class DialogueManagerV2:
             n=3
         )
         
-        # Parse response with extended metadata
+        # Get symptom category questions for prompt
+        symptom_category_questions = self._get_symptom_category_questions()
+        
+        # Build combined additional_fields from next_questions + symptom categories
+        all_additional_questions = []
+        if next_questions:
+            all_additional_questions.extend(next_questions)
+        if symptom_category_questions:
+            all_additional_questions.extend(symptom_category_questions)
+        
+        # Build extraction prompt
+        try:
+            # Create PromptSpec
+            prompt_spec = create_prompt_spec(
+                question=pending_question,
+                mode=PromptMode.PRIMARY,
+                next_questions=all_additional_questions if all_additional_questions else None
+            )
+            
+            # Build prompt text
+            prompt_text = self.prompt_builder.build(prompt_spec, user_input)
+            
+            logger.debug(
+                f"Built prompt for {pending_question['id']} "
+                f"({len(all_additional_questions)} additional fields)"
+            )
+            
+        except PromptBuildError as e:
+            # Prompt construction failed - this is a critical error
+            # Let it propagate to crash the system
+            logger.error(f"PromptBuilder failed for {pending_question['id']}: {e}")
+            raise
+        
+        # Parse response with pre-built prompt
         try:
             parse_result = self.parser.parse(
-                question=pending_question,
+                prompt_text=prompt_text,
                 patient_response=user_input,
-                turn_id=f"turn_{turn_count + 1:03d}",
-                next_questions=next_questions,
-                symptom_categories=self.symptom_categories
+                expected_field=pending_question['field'],
+                turn_id=f"turn_{turn_count + 1:03d}"
             )
             
             outcome = parse_result['outcome']
@@ -1072,12 +1193,21 @@ class DialogueManagerV2:
         """
         # Parse transition response (no next_questions for meta-question)
         try:
-            parse_result = self.parser.parse(
+            # Build extraction prompt for transition question
+            prompt_spec = create_prompt_spec(
                 question=self.TRANSITION_QUESTION,
+                mode=PromptMode.PRIMARY,
+                next_questions=None  # No metadata window for transition
+            )
+            
+            prompt_text = self.prompt_builder.build(prompt_spec, user_input)
+            
+            # Parse with pre-built prompt
+            parse_result = self.parser.parse(
+                prompt_text=prompt_text,
                 patient_response=user_input,
-                turn_id=f"turn_{turn_count + 1:03d}",
-                next_questions=None,
-                symptom_categories=self.symptom_categories
+                expected_field=self.TRANSITION_QUESTION['field'],
+                turn_id=f"turn_{turn_count + 1:03d}"
             )
             
             outcome = parse_result['outcome']
@@ -1175,7 +1305,7 @@ class DialogueManagerV2:
         """
         Route extracted fields to episode or shared storage.
         
-        V3-GUARD: Centralizes all RP Ã¢â€ â€™ State writes behind commit guard.
+        V3-GUARD: Centralizes all RP ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ State writes behind commit guard.
         
         Routing rules:
         - Episode fields: Prefix-based + guard-gated
@@ -1293,7 +1423,7 @@ class DialogueManagerV2:
             list: Routing info dicts with field, value, resolution, episode_id, rule, recognized
         """
         # Import classifier data (flat imports for server)
-        from episode_classifier import EPISODE_PREFIXES, SHARED_PREFIXES, COLLECTION_FIELDS
+        from backend.utils.episode_classifier import EPISODE_PREFIXES, SHARED_PREFIXES, COLLECTION_FIELDS
         
         routing_debug = []
         

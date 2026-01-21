@@ -32,8 +32,8 @@ import json
 import logging
 from typing import Optional, Dict, Any, List
 
-from hf_client_v2 import HuggingFaceClient
-from episode_hypothesis_signal import EpisodeHypothesisSignal, ConfidenceBand
+from backend.utils.hf_client_v2 import HuggingFaceClient
+from backend.utils.episode_hypothesis_signal import EpisodeHypothesisSignal, ConfidenceBand
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +78,12 @@ class EpisodeHypothesisGenerator:
             TypeError: If hf_client wrong type or missing methods
             RuntimeError: If hf_client model not loaded
         """
-        if not isinstance(hf_client, HuggingFaceClient):
-            raise TypeError("hf_client must be HuggingFaceClient instance")
-        
+        # Duck typing validation (matches ResponseParserV2 pattern)
         if not hasattr(hf_client, 'generate_json') or not callable(hf_client.generate_json):
             raise TypeError("hf_client must have callable generate_json() method")
+        
+        if not hasattr(hf_client, 'is_loaded') or not callable(hf_client.is_loaded):
+            raise TypeError("hf_client must have callable is_loaded() method")
         
         if not hf_client.is_loaded():
             raise RuntimeError("HuggingFace client model not loaded")

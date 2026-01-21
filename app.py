@@ -9,18 +9,19 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 import logging
 import os
 
-from state_manager_v2 import StateManagerV2
-from question_selector_v2 import QuestionSelectorV2
-from response_parser_v2 import ResponseParserV2
-from json_formatter_v2 import JSONFormatterV2
-from summary_generator_v2 import SummaryGeneratorV2
-from dialogue_manager_v2 import DialogueManagerV2
-from hf_client_v2 import HuggingFaceClient
-from episode_hypothesis_generator import EpisodeHypothesisGenerator
+from backend.core.state_manager_v2 import StateManagerV2
+from backend.core.question_selector_v2 import QuestionSelectorV2
+from backend.core.response_parser_v2 import ResponseParserV2
+from backend.core.json_formatter_v2 import JSONFormatterV2
+from backend.core.summary_generator_v2 import SummaryGeneratorV2
+from backend.core.dialogue_manager_v2 import DialogueManagerV2
+from backend.utils.hf_client_v2 import HuggingFaceClient
+from backend.core.episode_hypothesis_generator import EpisodeHypothesisGenerator
+from backend.utils.prompt_builder import PromptBuilder
 
-from commands import StartConsultation, UserTurn, FinalizeConsultation
-from results import TurnResult, FinalReport, IllegalCommand
-from persistence import ConsultationPersistence
+from backend.commands import StartConsultation, UserTurn, FinalizeConsultation
+from backend.results import TurnResult, FinalReport, IllegalCommand
+from backend.persistence import ConsultationPersistence
 
 # Configure logging
 logging.basicConfig(
@@ -57,10 +58,11 @@ def initialize_dialogue_manager():
     )
     
     # Initialize stateless modules
-    selector = QuestionSelectorV2("ruleset_v2.json")
+    selector = QuestionSelectorV2("data/ruleset_v2.json")
     parser = ResponseParserV2(hf_client)
     formatter = JSONFormatterV2()
     generator = SummaryGeneratorV2(hf_client)
+    prompt_builder = PromptBuilder()
     ehg = EpisodeHypothesisGenerator(hf_client)
     
     # Create DM (stateless - state comes from commands)
@@ -70,17 +72,11 @@ def initialize_dialogue_manager():
         response_parser=parser,
         json_formatter=formatter,
         summary_generator=generator,
+        prompt_builder=prompt_builder,
         episode_hypothesis_generator=ehg
     )
     
     logger.info("DialogueManager initialized successfully")
-
-
-# Initialize before first request
-@app.before_first_request
-def startup():
-    """Run before first request"""
-    initialize_dialogue_manager()
 
 
 # ============================================================================
@@ -209,6 +205,16 @@ def submit_turn():
     # Issue command
     command = UserTurn(user_input=user_input, state=state)
     result = dialogue_manager.handle(command)
+
+# TEMPORARY DEBUG
+    logger.info(f"DEBUG: result.debug keys: {result.debug.keys()}")
+    if 'state_view' in result.debug:
+        logger.info(f"DEBUG: state_view episodes: {len(result.debug['state_view'].get('episodes', []))}")
+        # ADD THIS:
+        for i, ep in enumerate(result.debug['state_view'].get('episodes', [])):
+            logger.info(f"DEBUG: Episode {i+1} has {len(ep.get('fields', []))} fields: {ep.get('fields', [])}")
+    else:
+        logger.error("DEBUG: state_view NOT in result.debug!")
     
     if isinstance(result, IllegalCommand):
         return jsonify({'error': result.reason}), 400
@@ -298,5 +304,7 @@ if __name__ == '__main__':
     print("\nPress Ctrl+C to stop the server")
     print("="*60 + "\n")
     
-    # Note: initialize_dialogue_manager() called via @app.before_first_request
+    # Initialize DialogueManager (expensive - loads model)
+    initialize_dialogue_manager()
+    
     app.run(debug=True, host='0.0.0.0', port=5000)

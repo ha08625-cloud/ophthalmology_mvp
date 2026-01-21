@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 
 # Flat imports for server testing
 # When copying to local, adjust to: from backend.conversation_modes import ...
-from conversation_modes import ConversationMode, VALID_MODES
+from backend.utils.conversation_modes import ConversationMode, VALID_MODES
 
 logger = logging.getLogger(__name__)
 
@@ -608,7 +608,7 @@ class StateManagerV2:
             serialized[field_name] = {
                 'source': prov_record['source'],
                 'confidence': prov_record['confidence'],
-                'mode': prov_record['mode'].value  # Enum -> string for JSON
+                'mode': prov_record['mode']  # Enum -> string for JSON
             }
         return serialized
     
@@ -1424,7 +1424,7 @@ class StateManagerV2:
             'episodes': serializable_episodes,
             'shared_data': self._serialize_shared_data(exclude_provenance=False),  # V3: Include provenance
             'dialogue_history': self._deep_copy(self.dialogue_history),
-            'conversation_mode': self.conversation_mode.value,  # V3: Serialize enum to string
+            'conversation_mode': self.conversation_mode,  # V3: Serialize enum to string
             'clarification_context': clarification_context_dict  # V3: Clarification buffer
         }
     

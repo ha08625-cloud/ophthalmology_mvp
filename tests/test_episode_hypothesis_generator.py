@@ -21,8 +21,8 @@ from unittest.mock import Mock, patch
 logging.basicConfig(level=logging.DEBUG)
 
 # Import the module under test
-from backend.modules.episode_hypothesis_generator import EpisodeHypothesisGenerator
-from backend.modules.episode_hypothesis_signal import EpisodeHypothesisSignal, ConfidenceBand
+from backend.core.episode_hypothesis_generator import EpisodeHypothesisGenerator
+from backend.utils.episode_hypothesis_signal import EpisodeHypothesisSignal, ConfidenceBand
 
 
 class TestEpisodeHypothesisGeneratorUnit:
@@ -41,10 +41,22 @@ class TestEpisodeHypothesisGeneratorUnit:
         """Create EHG with mock client"""
         return EpisodeHypothesisGenerator(mock_hf_client)
     
-    def test_init_validates_hf_client_type(self):
-        """Should reject non-HuggingFaceClient objects"""
-        with pytest.raises(TypeError, match="must be HuggingFaceClient"):
-            EpisodeHypothesisGenerator("not a client")
+    def test_init_validates_hf_client_interface(self):
+        """Should reject objects without required methods"""
+        # Object without generate_json method
+        bad_client = Mock(spec=[])  # Empty spec - no methods
+        with pytest.raises(TypeError, match="generate_json"):
+            EpisodeHypothesisGenerator(bad_client)
+        
+        # Object with generate_json but without is_loaded
+        partial_client = Mock()
+        partial_client.generate_json = Mock()
+        del partial_client.is_loaded  # Remove the auto-created attribute
+        # Note: Mock auto-creates attributes, so we need spec to prevent this
+        partial_client2 = Mock(spec=['generate_json'])
+        partial_client2.generate_json = Mock()
+        with pytest.raises(TypeError, match="is_loaded"):
+            EpisodeHypothesisGenerator(partial_client2)
     
     def test_init_validates_model_loaded(self, mock_hf_client):
         """Should reject client with unloaded model"""
@@ -193,7 +205,7 @@ class TestEpisodeHypothesisGeneratorIntegration:
     @pytest.fixture(scope="class")
     def real_hf_client(self):
         """Load real HuggingFace client (expensive - once per class)"""
-        from backend.modules.hf_client_v2 import HuggingFaceClient
+        from backend.utils.hf_client_v2 import HuggingFaceClient
         
         try:
             client = HuggingFaceClient(

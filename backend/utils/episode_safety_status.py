@@ -37,7 +37,7 @@ Integration:
 """
 
 from enum import Enum
-from episode_hypothesis_signal import EpisodeHypothesisSignal
+from backend.utils.episode_hypothesis_signal import EpisodeHypothesisSignal
 
 
 class EpisodeSafetyStatus(Enum):

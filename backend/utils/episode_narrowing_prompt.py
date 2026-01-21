@@ -40,7 +40,7 @@ Future expansion:
     will expand to support actual episode resolution prompts.
 """
 
-from episode_safety_status import EpisodeSafetyStatus
+from backend.utils.episode_safety_status import EpisodeSafetyStatus
 
 
 def build_episode_narrowing_prompt(status: EpisodeSafetyStatus) -> str:
