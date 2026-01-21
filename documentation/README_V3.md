@@ -21,18 +21,15 @@
 
 ## Current Module Status
 
-**Working:**
-- State Manager V2: State storage
-- Question Selector V2: parses ruleset to determine next question
-- Response Parser V2: extracts structured clinical information from raw user responses
-- JSON Formatter V2: structured clinical output
-- Summary Generator V2: output in form of clinical letter
-- Dialogue Manager V2: thin orchestrator
+**Core modules:**
+- State Manager: State storage
+- Question Selector: parses ruleset to determine next question
+- Response Parser: extracts structured clinical information from raw user responses
+- Episode hypothesis generator: screens user responses for episode ambiguity
+- JSON Formatter: structured clinical output
+- Summary Generator: output in form of clinical letter
+- Dialogue Manager: thin orchestrator
 - Flask: transport layer
-
-**Key work for this version:**
-- create intake layer that manages multi-episode ambiguity
-- An episode in this system represents a patient-perceived problem narrative, not a clinically validated event
 
 ## Design Decisions
 1. Freeze Meaning, Not Implementation
