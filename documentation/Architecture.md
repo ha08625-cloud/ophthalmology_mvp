@@ -35,7 +35,9 @@ The Orchestrator module is the Dialogue Manager. The other core modules don't ca
 **Key characteristic:** Stateless per-turn transformation
 
 - Receives user input and state snapshot
-- Calls Response Parser to extract clinical data
+- Calls Episode Hypothesis Generator to detect episode ambiguity
+- Calls prompt_builder.py to build a prompt for response parser
+- Calls Response Parser with the prompt to extract clinical data
 - Routes extracted fields to correct storage location
 - Asks Question Selector what to ask next
 - Returns both canonical state (for persistence) and clinical view (for display)
@@ -88,23 +90,25 @@ The Orchestrator module is the Dialogue Manager. The other core modules don't ca
 - Returns: 'episode' | 'shared' | 'unknown'
 - No overlap between episode and shared categories
 
-### Episode Hypothesis Generator (episode_hypothesis_generator_stub.py)
+### Episode Hypothesis Generator (episode_hypothesis_generator.py)
 **Role:** Episode ambiguity detection  
-**Key characteristic:** Stateless signal generation (stub implementation)
-**Status:** Stub - will be replaced by LLM-driven implementation
+**Key characteristic:** Stateless signal generation
+**Status:** Basic LLM-driven implementation (limited by 7B model on 12GB GPU, will be upgraded when better hardware available)
 
-- Detects potential episode pivots via abandonment phrase matching
-- Keywords: "actually", "forget", "wait", "no", "different"
-- Estimates hypothesis count (currently defaults to 1, or 0 for empty input)
+- Detects potential episode pivots (user switched to different problem)
+- Estimates hypothesis count (0, 1, or >1 episodes mentioned)
+- Uses LLM semantic analysis with context about current episode
+- Receives last system question and current episode context for comparison
 - Returns EpisodeHypothesisSignal with:
-  - `hypothesis_count`: Number of episode hypotheses detected (0, 1, or >1)
-  - `pivot_detected`: Boolean indicating potential episode switch
-  - `confidence_band`: Confidence level (currently placeholder HIGH)
-  - `pivot_confidence_band`: Pivot confidence (currently placeholder HIGH)
+
+hypothesis_count: Number of episode hypotheses detected (0, 1, or >1)
+pivot_detected: Boolean indicating potential episode switch
+confidence_band: Confidence level (low, medium, high)
+pivot_confidence_band: Pivot confidence (low, medium, high)
+
 - Called every turn in extraction mode
-- Signal generated but not yet acted upon (awaiting Episode Hypothesis Manager)
-- Future: Will use LLM semantic analysis and current_episode_context for comparison
-- Never raises exceptions (returns safe defaults on error)
+- Signal interpreted by episode_safety_status.py which outputs AMBIGUOUS_MULTIPLE, AMBIGUOUS_PIVOT or SAFE_TO_EXTRACT (to be replaced by full Episode Hypothesis Manager when EHG upgraded)
+- LLM call failures raise exceptions (fail fast); malformed LLM output returns safe defaults
 
 ### JSON Formatter (json_formatter_v2.py)
 **Role:** Serialization to standard medical format  
@@ -131,7 +135,7 @@ The Orchestrator module is the Dialogue Manager. The other core modules don't ca
 
 1. **Transport Layer** passes user input + state snapshot to Dialogue Manager
 2. **Dialogue Manager** rehydrates State Manager from snapshot
-3. **Episode Hypothesis Generator** analyzes user input for episode ambiguity (signal logged but not yet acted upon)
+3. **Episode Hypothesis Generator** analyzes user input for episode ambiguity.  If safe, then response parser output is not blocked
 4. **Response Parser** extracts fields from user's text
 5. **Episode Classifier** determines where each field belongs
 6. **Dialogue Manager** stores fields via State Manager
@@ -141,6 +145,15 @@ The Orchestrator module is the Dialogue Manager. The other core modules don't ca
    - Clinical output (for display)
    - Next question or completion message
 9. **Transport Layer** persists state snapshot, shows question to user
+
+### Episode Ambiguity Data Flow
+
+1. **Transport Layer** passes user input + state snapshot to Dialogue Manager
+2. **Dialogue Manager** rehydrates State Manager from snapshot
+3. **Episode Hypothesis Generator** analyzes user input for episode ambiguity
+4. **episode_safety_status.py** determines AMBIGUOUS or SAFE depending on Episode Hypothesis Generator signal
+5.  **episode_narrowing_prompt.py** If AMBIGUOUS, then response parser output is discarded and prompt appears asking patient to return to current episode
+6. **Dialogue Manager** appends the pending question to the episode narrowing prompt and the system returns to the core extraction data flow
 
 ### Episode Transition Flow
 
@@ -197,15 +210,15 @@ State Manager â†’ export_for_summary()
 ## Module Dependencies
 
 ```
-Response Parser             â†’ (no dependencies)
-Episode Classifier          â†’ (no dependencies)
-Episode Hypothesis Generator â†’ episode_hypothesis_signal (dataclass contract)
-State Manager               â†’ clinical_data_model.json
-Question Selector           â†’ ruleset_v2.json
-JSON Formatter              â†’ json_schema.json, State Manager export
-Summary Generator           â†’ State Manager export
-Dialogue Manager            â†’ All above modules
-Flask/Console               â†’ Dialogue Manager only
+Response Parser             hf_client_v2.py
+Episode Classifier          (no dependencies)
+Episode Hypothesis Generator episode_hypothesis_signal (dataclass contract), hf_client_v2.py
+State Manager               clinical_data_model.json
+Question Selector           ruleset_v2.json
+JSON Formatter              json_schema.json, State Manager export
+Summary Generator           State Manager export
+Dialogue Manager            All above modules
+Flask/Console               Dialogue Manager only
 ```
 
 ## V3: Multi-Episode Architecture (In Progress)
@@ -226,11 +239,10 @@ Flask/Console               â†’ Dialogue Manager only
    - Fields: hypothesis_count, pivot_detected, confidence_band, pivot_confidence_band
    - Immutable dataclass with enum-based confidence levels
 
-3. **Episode Hypothesis Generator Stub** (episode_hypothesis_generator_stub.py)
-   - Simple abandonment phrase detection: "actually", "forget", "wait", "no", "different"
-   - Generates signals but Episode Hypothesis Manager not yet implemented
-   - Signals logged but not acted upon
-   - Interface ready for future LLM replacement
+3. **Episode Hypothesis Generator** (episode_hypothesis_generator.py)
+   - LLM driven module that detects hypothesis count and pivot (change to different topic)
+   - Currently low quality 7B model - accepted flaw which is dependent on hardware limitations
+   - Will be replaced with larger model and episode resolution mechanics once hardware is available
 
 4. **Field-Level Provenance Tagging** (state_manager_v2.py)
    - Tracks which turn/utterance each field came from
@@ -247,10 +259,6 @@ Flask/Console               â†’ Dialogue Manager only
    - Creates statements that acknowledge ambiguity and redirect patient back to the current episode
    - If episode_safety_status.py returns AMBIGUOUS_MULTIPLE or AMBIGUOUS_PIVOT, then RP output discarded and episode_narrowing_prompt.py called
    - pending_question is appended to the end of the question by the dialogue manager
-
-**In Progress:**
-- Real LLM-driven Episode Hypothesis Generator
-- Passing current_episode_context to EHG for semantic comparison
 
 ### V3 Architecture Principles
 
