@@ -19,7 +19,7 @@ The Orchestrator module is the Dialogue Manager. The other core modules don't ca
    - Calls: State Manager, Question Selector, Response Parser, Episode Classifier, Episode Hypothesis Generator, JSON Formatter, Summary Generator
    - Called by: Transport Layer
 
-3. Worker Modules
+3. Core Worker Modules
    - State Manager
    - Question Selector  
    - Response Parser
@@ -27,6 +27,17 @@ The Orchestrator module is the Dialogue Manager. The other core modules don't ca
    - Episode Hypothesis Generator
    - JSON Formatter
    - Summary Generator
+  
+4. Utility Modules
+   - clarification_templates.py
+   - conversation_modes.py
+   - display_helpers.py
+   - episode_classifier.py
+   - episode_hypothesis_signal.py
+   - episode_safety_status.py
+   - episode_narrowing_prompt.py
+   - prompt_builder.py
+   - prompt_formatter.py
 
 ## Core Modules
 
@@ -210,24 +221,23 @@ State Manager export_for_summary()
 ## Module Dependencies
 
 ```
-Response Parser             hf_client_v2.py
-Episode Classifier          (no dependencies)
-Episode Hypothesis Generator episode_hypothesis_signal (dataclass contract), hf_client_v2.py
-State Manager               clinical_data_model.json
-Question Selector           ruleset_v2.json
-JSON Formatter              json_schema.json, State Manager export
-Summary Generator           State Manager export
-Dialogue Manager            All above modules
+Response Parser:             hf_client_v2.py (LLM loading and inference wrapper), prompt_builder.py (builds input prompt for response parser)
+Episode Classifier:          (no dependencies)
+Episode Hypothesis Generator: episode_hypothesis_signal (dataclass contract), hf_client_v2.py
+State Manager:               clinical_data_model.json
+Question Selector:           ruleset_v2.json
+JSON Formatter:              json_schema.json, State Manager export
+Summary Generator:           State Manager export
+Dialogue Manager:            All above modules
 Flask/Console               Dialogue Manager only
 ```
 
-## V3: Multi-Episode Architecture
+## V3: Multiple Episode Ambiguity Handling Architecture
 
-**Goal:** Handle realistic patient narratives where multiple episodes are mentioned or switched mid-conversation.
+**Purpose:** Handle realistic patient narratives where multiple episodes are mentioned or switched mid-conversation.
 
-### Current Implementation Status
+**Implementation**
 
-**Completed:**
 1. **Conversation Mode Enum** (conversation_modes.py)
    - MODE_DISCOVERY: Initial patient input, determining what they want to discuss
    - MODE_CLARIFICATION: Resolving episode ambiguity
