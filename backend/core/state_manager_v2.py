@@ -6,6 +6,7 @@ Responsibilities:
 - Store shared data (flat scalars + arrays)
 - Store dialogue history per episode
 - Minimal API - pure data storage, no business logic
+- V4: Collapse ValueEnvelopes into provenance at write time
 
 Design principles:
 - Episodes as array (not dict) - preserves temporal order
@@ -18,6 +19,12 @@ API Philosophy:
 - State Manager = dumb data container
 - Dialogue Manager = smart coordinator (tracks current episode)
 - Question Selector = medical protocol logic
+
+V4 Envelope Semantics:
+- set_episode_field() and set_shared_field() accept ValueEnvelope or raw values
+- Envelopes are collapsed at write time (value stored, metadata becomes provenance)
+- Export methods guarantee envelope-free output (defense in depth)
+- Envelopes never leak to JSON Formatter or Summary Generator
 
 CRITICAL: Episode ID vs Array Index
 - Episode IDs are 1-indexed (user-facing identifiers): 1, 2, 3, ...
@@ -38,8 +45,21 @@ from enum import Enum
 from dataclasses import dataclass, field
 
 # Flat imports for server testing
-# When copying to local, adjust to: from backend.conversation_modes import ...
-from backend.utils.conversation_modes import ConversationMode, VALID_MODES
+# When copying to local, adjust to: from backend.utils.conversation_modes import ...
+try:
+    from backend.utils.conversation_modes import ConversationMode, VALID_MODES
+except ImportError:
+    from conversation_modes import ConversationMode, VALID_MODES
+
+# V4: Envelope support for ingress-time provenance capture
+# When copying to local, adjust to: from backend.contracts import ValueEnvelope
+# and: from backend.utils.envelope_helpers import is_envelope, strip_envelopes
+try:
+    from backend.contracts import ValueEnvelope
+    from backend.utils.envelope_helpers import is_envelope, strip_envelopes
+except ImportError:
+    from contracts import ValueEnvelope
+    from envelope_helpers import is_envelope, strip_envelopes
 
 logger = logging.getLogger(__name__)
 
@@ -462,6 +482,38 @@ class StateManagerV2:
             'confidence': ProvenanceConfidence.LOW.value,
             'mode': self.conversation_mode  # Already a ConversationMode enum
         }
+    
+    def _confidence_float_to_band(self, confidence: float) -> str:
+        """
+        Convert float confidence (0.0-1.0) to confidence band string.
+        
+        V4: Used when collapsing ValueEnvelope into provenance system.
+        
+        Mapping:
+            >= 0.8: 'high'
+            >= 0.5: 'medium'
+            < 0.5: 'low'
+        
+        Args:
+            confidence: Float confidence value from ValueEnvelope (0.0-1.0)
+            
+        Returns:
+            str: Confidence band ('high', 'medium', or 'low')
+            
+        Examples:
+            >>> self._confidence_float_to_band(0.95)
+            'high'
+            >>> self._confidence_float_to_band(0.7)
+            'medium'
+            >>> self._confidence_float_to_band(0.3)
+            'low'
+        """
+        if confidence >= 0.8:
+            return ProvenanceConfidence.HIGH.value
+        elif confidence >= 0.5:
+            return ProvenanceConfidence.MEDIUM.value
+        else:
+            return ProvenanceConfidence.LOW.value
     
     def _apply_weakest_link_confidence(
         self,
@@ -897,6 +949,8 @@ class StateManagerV2:
         Set field value in episode with optional provenance.
         
         V3: Provenance is optional. If not provided, default provenance is applied.
+        V4: Accepts ValueEnvelope. If value is an envelope, extracts the raw value
+            and converts envelope metadata to provenance record.
         
         No validation is performed on field_name or value - State Manager
         is a dumb container. Validation belongs in Response Parser or
@@ -907,15 +961,21 @@ class StateManagerV2:
         - No history: Previous provenance is discarded
         - Cannot write provenance without value (no separate set_provenance API)
         
+        Envelope Semantics (V4):
+        - Envelopes are collapsed at write time (not stored as envelopes)
+        - Envelope metadata (source, confidence) becomes provenance
+        - If value is envelope, explicit provenance parameter is ignored
+        
         Args:
             episode_id: Episode to update (1-indexed)
             field_name: Field to set (e.g., 'vl_laterality')
-            value: Value to set
+            value: Value or ValueEnvelope to set
             provenance: Optional provenance record {source, confidence, mode}
                 - source: str (one of VALID_SOURCES)
                 - confidence: str ('high'|'medium'|'low')
                 - mode: ConversationMode enum (NOT string)
                 If None, defaults to {SOURCE_DEFAULT, confidence=LOW, mode=current_mode}
+                Ignored if value is a ValueEnvelope.
             
         Raises:
             ValueError: If episode_id doesn't exist or provenance invalid
@@ -934,20 +994,42 @@ class StateManagerV2:
                     'mode': ConversationMode.MODE_EPISODE_EXTRACTION  # Enum, not string
                 }
             )
+            
+            # ValueEnvelope (V4) - provenance derived from envelope
+            state.set_episode_field(
+                1, 'vl_laterality',
+                ValueEnvelope(value='right', source='response_parser', confidence=0.95)
+            )
         """
         self._validate_episode_id(episode_id)
         
         index = episode_id - 1
         episode = self.episodes[index]
         
+        # V4: Collapse envelope to value + provenance
+        if is_envelope(value):
+            actual_value = value.value
+            # Convert envelope metadata to existing provenance format
+            provenance = {
+                'source': value.source,
+                'confidence': self._confidence_float_to_band(value.confidence),
+                'mode': self.conversation_mode
+            }
+            logger.debug(
+                f"Collapsed envelope for {field_name}: "
+                f"source={value.source}, confidence={value.confidence} -> {provenance['confidence']}"
+            )
+        else:
+            actual_value = value
+        
         # Write value (provenance cannot exist without value)
-        episode[field_name] = value
+        episode[field_name] = actual_value
         episode['timestamp_last_updated'] = datetime.now(timezone.utc).isoformat()
         
         # Store provenance (episode fields are not collections)
         self._store_provenance(episode['_provenance'], field_name, provenance, is_collection=False)
         
-        logger.debug(f"Episode {episode_id}: {field_name} = {value}")
+        logger.debug(f"Episode {episode_id}: {field_name} = {actual_value}")
     
     def get_episode(self, episode_id: int) -> Dict[str, Any]:
         """
@@ -1081,7 +1163,7 @@ class StateManagerV2:
         - questions_answered: We explicitly asked this question
         - questions_satisfied: We have data for this question's intent
         
-        Relationship: questions_answered Ã¢Å â€  questions_satisfied
+        Relationship: questions_answered ÃƒÂ¢Ã…Â Ã¢â‚¬Â  questions_satisfied
         
         Args:
             episode_id: Episode to update (1-indexed)
@@ -1191,6 +1273,8 @@ class StateManagerV2:
         V3: Provenance is optional. If not provided, default provenance is applied.
         V3 Update: Removed dot notation support. All shared fields are now flat
         with prefixes (e.g., 'sh_smoking_status', 'sr_gen_chills').
+        V4: Accepts ValueEnvelope. If value is an envelope, extracts the raw value
+            and converts envelope metadata to provenance record.
         
         Collection Invariants (V3):
         - Whole-array replacement only (no mutation, append, delete)
@@ -1204,14 +1288,20 @@ class StateManagerV2:
         - Cannot write provenance without value (no separate set_provenance API)
         - Collections apply weakest-link confidence degradation
         
+        Envelope Semantics (V4):
+        - Envelopes are collapsed at write time (not stored as envelopes)
+        - Envelope metadata (source, confidence) becomes provenance
+        - If value is envelope, explicit provenance parameter is ignored
+        
         Args:
             field_name: Flat field name (e.g., 'sh_smoking_status', 'medications')
-            value: Value to set
+            value: Value or ValueEnvelope to set
             provenance: Optional provenance record {source, confidence, mode}
                 - source: str (one of VALID_SOURCES)
                 - confidence: str ('high'|'medium'|'low')
                 - mode: ConversationMode enum (NOT string)
                 If None, defaults to {SOURCE_DEFAULT, confidence=LOW, mode=current_mode}
+                Ignored if value is a ValueEnvelope.
             
         Raises:
             ValueError: If provenance invalid
@@ -1230,9 +1320,31 @@ class StateManagerV2:
                     'mode': ConversationMode.MODE_EPISODE_EXTRACTION  # Enum, not string
                 }
             )
+            
+            # ValueEnvelope (V4) - provenance derived from envelope
+            state.set_shared_field(
+                'sh_smoking_status',
+                ValueEnvelope(value='current', source='response_parser', confidence=0.9)
+            )
         """
+        # V4: Collapse envelope to value + provenance
+        if is_envelope(value):
+            actual_value = value.value
+            # Convert envelope metadata to existing provenance format
+            provenance = {
+                'source': value.source,
+                'confidence': self._confidence_float_to_band(value.confidence),
+                'mode': self.conversation_mode
+            }
+            logger.debug(
+                f"Collapsed envelope for {field_name}: "
+                f"source={value.source}, confidence={value.confidence} -> {provenance['confidence']}"
+            )
+        else:
+            actual_value = value
+        
         # Write value (provenance cannot exist without value)
-        self.shared_data[field_name] = value
+        self.shared_data[field_name] = actual_value
         
         # Determine if this is a collection field (weakest-link applies)
         is_collection = field_name in COLLECTION_FIELDS
@@ -1245,7 +1357,7 @@ class StateManagerV2:
             is_collection=is_collection
         )
         
-        logger.debug(f"Shared data: {field_name} = {value}")
+        logger.debug(f"Shared data: {field_name} = {actual_value}")
     
     def append_shared_array(self, field_name: str, item: Dict[str, Any]) -> None:
         """
@@ -1388,7 +1500,7 @@ class StateManagerV2:
         
         This is the authoritative representation used for:
         - Transport layer persistence (Flask session, console memory)
-        - Round-trip serialization (state ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ snapshot ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ state)
+        - Round-trip serialization (state ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ snapshot ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ state)
         - V3 provenance and confidence tracking
         
         Properties:
@@ -1535,6 +1647,7 @@ class StateManagerV2:
         - Excludes operational fields
         - Excludes provenance (V3)
         - Flat structure (JSON Formatter handles nesting)
+        - V4: Guarantees no ValueEnvelopes in output (defense in depth)
         
         Use snapshot_state() for persistence instead.
         
@@ -1544,6 +1657,7 @@ class StateManagerV2:
                 'shared_data': {...}  # Flat fields, no provenance
             }
         """
+        # POLICY: Filter to clinical data only (State Manager's authority)
         # V3: Strip operational AND provenance for clinical output
         serializable_episodes = [
             self._serialize_episode(ep, exclude_operational=True, exclude_provenance=True)
@@ -1557,10 +1671,14 @@ class StateManagerV2:
             if set(ep.keys()) - metadata_fields  # Has at least one clinical field
         ]
         
-        return {
+        # MECHANISM: Ensure no envelopes leak to output (defense in depth)
+        # V4: strip_envelopes guarantees envelope-free output for legacy consumers
+        # Note: Envelopes should already be collapsed at write time, but this
+        # provides an extra safety layer at the export boundary.
+        return strip_envelopes({
             'episodes': non_empty_episodes,
-            'shared_data': self._serialize_shared_data(exclude_provenance=True)  # V3: Strip provenance
-        }
+            'shared_data': self._serialize_shared_data(exclude_provenance=True)
+        })
     
     def export_for_json(self) -> Dict[str, Any]:
         """
@@ -1577,6 +1695,7 @@ class StateManagerV2:
         Export state for summary generator.
         
         V3: Includes operational fields and filtered provenance (source + confidence only).
+        V4: Guarantees no ValueEnvelopes in output (defense in depth)
         
         Includes operational fields (summary generator may need context
         about what questions were asked).
@@ -1588,7 +1707,7 @@ class StateManagerV2:
                 'dialogue_history': {episode_id: [turns]}
             }
         """
-        # V3: Include provenance but filter mode field
+        # POLICY: Include provenance but filter mode field (State Manager's authority)
         serializable_episodes = [
             self._filter_provenance_for_summary(
                 self._serialize_episode(ep, exclude_operational=False)
@@ -1596,13 +1715,15 @@ class StateManagerV2:
             for ep in self.episodes
         ]
         
-        return {
+        # MECHANISM: Ensure no envelopes leak to output (defense in depth)
+        # V4: strip_envelopes guarantees envelope-free output for legacy consumers
+        return strip_envelopes({
             'episodes': serializable_episodes,
             'shared_data': self._filter_provenance_for_summary(
                 self._serialize_shared_data(exclude_provenance=False)
             ),
             'dialogue_history': self._deep_copy(self.dialogue_history)
-        }
+        })
     
     # ========================
     # Utility Methods
