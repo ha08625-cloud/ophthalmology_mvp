@@ -5,6 +5,7 @@ Responsibilities:
 - Execute extraction given pre-built prompt text
 - Call LLM to extract structured fields
 - Parse and validate LLM output with normalization
+- Wrap extracted values in ValueEnvelope for provenance tracking
 - Return contract-compliant structure
 
 Contract: response_parser_contract_v1.json
@@ -15,6 +16,10 @@ Design principles:
 - Validation warnings (not failures)
 - Fail gracefully with structured errors
 - Pure executor - does not build prompts or make extraction decisions
+- ValueEnvelope wrapping at extraction boundary
+- Envelopes carry source='response_parser' and confidence=1.0 (default)
+- Dialogue Manager passes envelopes through unchanged
+- State Manager collapses envelopes into provenance at write time
 """
 
 import json
@@ -23,6 +28,9 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
 from backend.utils.hf_client_v2 import HuggingFaceClient
+
+from backend.contracts import ValueEnvelope
+
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +101,8 @@ class ResponseParserV2:
         
         Contract: response_parser_contract_v1.json
         
+        V4 Update: Fields are now wrapped in ValueEnvelope objects.
+        
         Args:
             prompt_text: Pre-built extraction prompt from PromptBuilder
             patient_response: What patient said (for metadata only)
@@ -102,8 +112,14 @@ class ResponseParserV2:
         Returns:
             ParseResult: {
                 'outcome': str (success|partial_success|unclear|extraction_failed|generation_failed),
-                'fields': dict,
+                'fields': dict[str, ValueEnvelope],  # V4: envelope-wrapped values
                 'parse_metadata': dict
+            }
+            
+            Fields dict contains ValueEnvelope objects:
+            {
+                'vl_laterality': ValueEnvelope(value='right', source='response_parser', confidence=1.0),
+                'vl_single_eye': ValueEnvelope(value='single', source='response_parser', confidence=1.0)
             }
             
         Raises:
@@ -111,12 +127,13 @@ class ResponseParserV2:
             
         Examples:
             >>> prompt = builder.build(spec, "My right eye")
-            >>> parse(prompt, "My right eye", expected_field='vl_laterality', turn_id='turn_05')
-            {
-                'outcome': 'success',
-                'fields': {'vl_laterality': 'right'},
-                'parse_metadata': {'turn_id': 'turn_05', ...}
-            }
+            >>> result = parse(prompt, "My right eye", expected_field='vl_laterality', turn_id='turn_05')
+            >>> result['outcome']
+            'success'
+            >>> result['fields']['vl_laterality'].value
+            'right'
+            >>> result['fields']['vl_laterality'].source
+            'response_parser'
         """
         # Validate inputs
         if not isinstance(prompt_text, str):
@@ -199,7 +216,11 @@ class ResponseParserV2:
             parse_metadata=parse_metadata  # Passed by reference, will be mutated
         )
         
+        # V4: Wrap extracted fields in ValueEnvelope for provenance tracking
+        enveloped_fields = self._wrap_in_envelopes(extracted_fields)
+        
         # Determine outcome based on what was extracted
+        # Note: Check raw extracted_fields for outcome determination (not enveloped)
         if expected_field and expected_field in extracted_fields and extracted_fields[expected_field] is not None:
             # Got the expected field - SUCCESS
             outcome = OUTCOME_SUCCESS
@@ -236,7 +257,7 @@ class ResponseParserV2:
         
         return {
             'outcome': outcome,
-            'fields': extracted_fields,
+            'fields': enveloped_fields,  # V4: Return envelope-wrapped fields
             'parse_metadata': parse_metadata
         }
     
@@ -287,7 +308,7 @@ class ResponseParserV2:
                         'normalization_type': 'boolean'
                     })
                     logger.debug(
-                        f"Field '{key}': normalized '{original_value}' → {normalized_value}"
+                        f"Field '{key}': normalized '{original_value}' â†’ {normalized_value}"
                     )
             
             # Already a boolean - pass through
@@ -327,3 +348,40 @@ class ResponseParserV2:
             return False
         else:
             return None
+    
+    def _wrap_in_envelopes(
+        self,
+        extracted_fields: Dict[str, Any]
+    ) -> Dict[str, ValueEnvelope]:
+        """
+        Wrap extracted field values in ValueEnvelope objects.
+        
+        V4: Creates provenance-tracking wrappers for all extracted values.
+        These envelopes flow through Dialogue Manager unchanged and are
+        collapsed into the provenance system by State Manager at write time.
+        
+        Args:
+            extracted_fields: Dict of field_name -> raw value
+            
+        Returns:
+            Dict of field_name -> ValueEnvelope
+            
+        Note:
+            - source is always 'response_parser' (this module's identity)
+            - confidence is always 1.0 (default; future: derive from LLM output)
+            - Empty dicts return empty dicts (no envelopes for no fields)
+        """
+        enveloped = {}
+        
+        for field_name, value in extracted_fields.items():
+            enveloped[field_name] = ValueEnvelope(
+                value=value,
+                source='response_parser',
+                confidence=1.0  # Future enhancement: derive from LLM confidence
+            )
+            logger.debug(
+                f"Wrapped '{field_name}' in envelope: "
+                f"value={value}, source=response_parser, confidence=1.0"
+            )
+        
+        return enveloped
