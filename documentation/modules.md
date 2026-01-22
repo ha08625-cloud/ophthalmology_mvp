@@ -14,6 +14,17 @@ summary_generator_documentation.md
 
 ## Utility Modules
 
+1. helpers.py
+2. field_mappings.py
+3. episode_hypothesis_signal.py
+4. conversation_modes.py
+5. clarification_templates.py
+6. episode_hypothesis_generator.py
+7. episode_safety_status.py
+8. prompt_builder.py
+9. hf_client_v2.py
+10. episode_narrowing_prompt.py
+
 ### Helpers (helpers.py)
 
 **Purpose:** Utility functions for consultation management
@@ -274,264 +285,679 @@ state.append_clarification_turn(
 
 ---
 
-### RP Replay Input (rp_replay_input.py)
+### Episode Hypothesis Generator (episode_hypothesis_generator.py)
 
-**Purpose:** Boundary object for Response Parser replay after clarification resolution
+**Purpose:** Detect episode multiplicity and pivoting in user utterances using LLM semantic analysis
 
-**Role:** Defines the ONLY legal input structure for RP replay, enforcing replay invariants at construction time
+**Role:** Analyzes patient responses to detect when multiple distinct eye problems are mentioned or when the patient pivots away from the current episode. Outputs structured signals consumed by Episode Safety Status for commit gating.
 
-**Components:**
+**Constructor:**
+```python
+def __init__(
+    self,
+    hf_client: HuggingFaceClient,
+    temperature: float = 0.0,
+    max_tokens: int = 128
+)
+```
+- Takes shared HuggingFaceClient instance (same as ResponseParser)
+- Duck typing validation (checks for `generate_json` and `is_loaded` methods)
+- Raises `TypeError` if client interface invalid
+- Raises `RuntimeError` if model not loaded
 
-**EpisodeAnchor dataclass** - Authoritative episode binding for replay
+**Primary Method:**
+```python
+def generate_hypothesis(
+    self,
+    user_utterance: str,
+    last_system_question: Optional[str] = None,
+    current_episode_context: Optional[Dict[str, Any]] = None
+) -> EpisodeHypothesisSignal
+```
+
+**Parameters:**
+- `user_utterance`: Raw patient response text
+- `last_system_question`: The question the system just asked (provides context for pivot detection)
+- `current_episode_context`: Context about current episode for comparison
+  ```python
+  {
+      "active_symptom_categories": ["vl", "cp", ...]  # Symptom prefixes with data
+  }
+  ```
+
+**Returns:** `EpisodeHypothesisSignal` dataclass with:
+- `hypothesis_count`: Number of distinct episodes detected (0, 1, or 2+)
+- `confidence_band`: Confidence in hypothesis count (LOW/MEDIUM/HIGH)
+- `pivot_detected`: Whether patient switched to different episode
+- `pivot_confidence_band`: Confidence in pivot detection (LOW/MEDIUM/HIGH)
+
+**Prompt Design:**
+- Includes last system question for context
+- Includes active symptom categories from current episode
+- Requests JSON output with four fields
+- Instructs LLM on episode semantics (distinct problems vs continuation)
+
+**Error Handling:**
+
+| Scenario | Behaviour |
+|----------|-----------|
+| Empty/None utterance | Returns `hypothesis_count=0`, no LLM call |
+| LLM call fails (CUDA OOM, timeout) | Raises `RuntimeError` (fail fast) |
+| LLM returns invalid JSON | Logs warning, returns safe default signal |
+| Missing fields in JSON | Uses defaults (count=1, pivot=False, confidence=HIGH) |
+| Negative hypothesis_count | Clamped to 0 |
+| hypothesis_count > 2 | Capped to 2 (>1 is what matters) |
+
+**Safe Default Signal:**
+```python
+EpisodeHypothesisSignal(
+    hypothesis_count=1,
+    confidence_band=ConfidenceBand.HIGH,
+    pivot_detected=False,
+    pivot_confidence_band=ConfidenceBand.HIGH
+)
+```
+Allows extraction to proceed safely when parsing fails.
+
+**Key Design Decisions:**
+- Fail fast on LLM infrastructure errors (system problem, not patient input)
+- Graceful handling of malformed LLM output (small models produce garbage occasionally)
+- hypothesis_count capped at 2 because >1 triggers the same safety response
+- Confidence bands passed through to signal even though Episode Safety Status currently ignores them (future use)
+
+**Usage Pattern:**
+```python
+from episode_hypothesis_generator import EpisodeHypothesisGenerator
+from hf_client_v2 import HuggingFaceClient
+
+# Initialize (once at startup)
+hf_client = HuggingFaceClient("mistralai/Mistral-7B-Instruct-v0.2", load_in_4bit=True)
+ehg = EpisodeHypothesisGenerator(hf_client)
+
+# Per-turn usage
+signal = ehg.generate_hypothesis(
+    user_utterance="Actually, I also have headaches with flashing lights",
+    last_system_question="How long has your vision been blurry?",
+    current_episode_context={"active_symptom_categories": ["vl"]}
+)
+
+# Signal consumed by Episode Safety Status
+from episode_safety_status import assess_episode_safety
+safety = assess_episode_safety(signal)  # SAFE_TO_EXTRACT | AMBIGUOUS_MULTIPLE | AMBIGUOUS_PIVOT
+```
+
+**Integration:**
+- Instantiated by: Flask app (app.py) during startup
+- Injected into: DialogueManager constructor
+- Called by: DialogueManager._process_regular_turn()
+- Context built by: DialogueManager._build_episode_context_for_ehg()
+- Output consumed by: episode_safety_status.assess_episode_safety()
+- Shares HuggingFaceClient with: ResponseParser, SummaryGenerator
+
+---
+
+### Episode Safety Status (episode_safety_status.py)
+
+**Purpose:** Deterministic safety assessment from probabilistic Episode Hypothesis Generator signals
+
+**Role:** Provides the sole boundary between probabilistic inference (EHG) and deterministic control flow (Dialogue Manager). Collapses probabilistic EpisodeHypothesisSignal into a finite safety decision that gates whether Response Parser output can be committed to state.
+
+**Enum: EpisodeSafetyStatus**
+
+Three mutually exclusive outcomes:
+- `SAFE_TO_EXTRACT`: Single episode hypothesis, no pivot detected → safe to commit RP output
+- `AMBIGUOUS_MULTIPLE`: Multiple episode hypotheses detected → clarification/coercion required
+- `AMBIGUOUS_PIVOT`: Single hypothesis but pivot detected → clarification/coercion required
+
+**Primary Function:**
+```python
+def assess_episode_safety(
+    signal: EpisodeHypothesisSignal
+) -> EpisodeSafetyStatus
+```
+
+**Parameters:**
+- `signal`: EpisodeHypothesisSignal from Episode Hypothesis Generator containing:
+  - `hypothesis_count`: Number of episodes detected (0, 1, or 2+)
+  - `confidence_band`: Confidence level (LOW/MEDIUM/HIGH)
+  - `pivot_detected`: Boolean indicating potential episode switch
+  - `pivot_confidence_band`: Confidence in pivot detection
+
+**Returns:** `EpisodeSafetyStatus` enum value
+
+**Precedence Rules (applied in order):**
+1. If `hypothesis_count > 1` → `AMBIGUOUS_MULTIPLE`
+2. If `pivot_detected == True` → `AMBIGUOUS_PIVOT`
+3. Otherwise → `SAFE_TO_EXTRACT`
+
+**Key Design Decisions:**
+- **Pure function**: No side effects, no logging, no state modification
+- **Total function**: Always returns valid enum value, never raises exceptions
+- **Deterministic**: Same input always produces same output
+- **Conservative by design**: Confidence bands intentionally ignored
+  - Better false positives (unnecessary clarification) than false negatives (clinical corruption)
+  - Safety assessment gates clinical data commits, so err on side of caution
+- **Closed set**: Only three outcomes, no future expansion without explicit architectural decision
+- **Scope limited**: Does NOT decide episode identity, resolve ambiguity, ask questions, transition modes, or write state
+
+**Edge Cases:**
+
+| Scenario | Behaviour | Rationale |
+|----------|-----------|-----------|
+| `hypothesis_count = 0` | Returns `SAFE_TO_EXTRACT` | Known limitation - treated as safe to avoid blocking conversation on off-topic input. Will be addressed with better hardware/models. |
+| `hypothesis_count = 100` | Returns `AMBIGUOUS_MULTIPLE` | Any count >1 triggers same safety response |
+| Both `hypothesis_count > 1` AND `pivot_detected = True` | Returns `AMBIGUOUS_MULTIPLE` | Multiple hypotheses takes precedence (established hierarchy) |
+| Low confidence but valid structure | Ignores confidence, applies rules | Conservative - trust structural signal over confidence calibration |
+
+**Usage Pattern:**
+```python
+from episode_hypothesis_signal import EpisodeHypothesisSignal, ConfidenceBand
+from episode_safety_status import EpisodeSafetyStatus, assess_episode_safety
+
+# Receive signal from EHG
+signal = EpisodeHypothesisSignal(
+    hypothesis_count=2,
+    confidence_band=ConfidenceBand.MEDIUM,
+    pivot_detected=False,
+    pivot_confidence_band=ConfidenceBand.LOW
+)
+
+# Assess safety
+safety_status = assess_episode_safety(signal)
+
+# Branch on outcome
+if safety_status == EpisodeSafetyStatus.SAFE_TO_EXTRACT:
+    # Commit Response Parser output to state
+    state_manager.commit_fields(parse_result['fields'])
+else:
+    # Block commit, display coercion prompt
+    # safety_status is either AMBIGUOUS_MULTIPLE or AMBIGUOUS_PIVOT
+    return coercion_prompt
+```
+
+**Integration:**
+- Called by: DialogueManager (Step C integration point marked with comment)
+- Consumes: EpisodeHypothesisSignal from EpisodeHypothesisGenerator
+- Gates: Response Parser commit to StateManager
+- Triggers: Coercion prompt generation (Step B) when unsafe
+
+---
+
+### Prompt Builder (prompt_builder.py)
+
+**Purpose:** Translate structured extraction intent into deterministic LLM prompt text with semantic field context
+
+**Role:** Compiles ruleset metadata (field labels, descriptions, valid values) into complete extraction prompts. Ensures LLM understands what fields mean (e.g., "visual loss onset speed") while outputting technical field IDs (e.g., "vl_onset_speed"). Separates prompt construction (medical logic) from prompt execution (ResponseParser).
+
+**Core Types:**
+
+**`PromptMode` (Enum):**
+```python
+class PromptMode(Enum):
+    PRIMARY = "primary"                    # Normal extraction
+    REPLAY = "replay"                      # Clarification exit replay (future)
+    CLARIFICATION_EXIT = "clarification_exit"  # Post-disambiguation (future)
+```
+- Internal control signal, not serialized
+- Determines prompt framing strategy
+
+**`FieldType` (str, Enum):**
+```python
+class FieldType(str, Enum):
+    CATEGORICAL = "categorical"
+    BOOLEAN = "boolean"
+    TEXT = "text"
+```
+- Canonical field types for this system
+- New types added deliberately (e.g., date not yet supported)
+
+**`FieldSpec` (frozen dataclass):**
+```python
+@dataclass(frozen=True)
+class FieldSpec:
+    field_id: str          # Technical name: "vl_onset_speed"
+    label: str             # Semantic meaning: "visual loss onset speed"
+    description: str       # What it represents: "how quickly visual loss developed"
+    field_type: FieldType  # categorical | boolean | text
+    valid_values: Optional[List[str]] = None      # Required for categorical
+    definitions: Optional[Dict[str, str]] = None  # Value definitions (optional)
+```
+- Compiled from ruleset entry
+- Validates on construction (`__post_init__`)
+- Fail-fast if incomplete or inconsistent
+
+**`PromptSpec` (frozen dataclass):**
+```python
+@dataclass(frozen=True)
+class PromptSpec:
+    mode: PromptMode
+    primary_field: FieldSpec
+    question_text: str
+    additional_fields: List[FieldSpec] = None     # Metadata window
+    episode_anchor: Optional[EpisodeAnchor] = None  # Future: episode context
+    constraints: Optional[Dict[str, Any]] = None    # Future: extraction rules
+```
+- Contract object representing compiled intent
+- Not a convenience dict - explicit structure enforced
+- Consumed by PromptBuilder to generate prompt text
+
+**`EpisodeAnchor` (stub dataclass):**
 ```python
 @dataclass(frozen=True)
 class EpisodeAnchor:
-    episode_id: Optional[str]           # Target episode (1-indexed)
-    resolution_status: ClarificationResolution  # CONFIRMED/FORCED/UNRESOLVABLE
-    applied_policy: Optional[ForcedResolutionPolicy]  # Required for FORCED
+    episode_id: Optional[str] = None
+    resolution_status: Optional[str] = None
+```
+- Placeholder for future episode-scoped extraction
+- Reserves authority in PromptSpec contract
+- Currently unused
+
+**Class: PromptBuilder**
+
+**Primary Method:**
+```python
+def build(self, spec: PromptSpec, patient_response: str) -> str
 ```
 
-**ReplayTranscriptEntry dataclass** - Single (system_prompt, user_response) pair
-```python
-@dataclass(frozen=True)
-class ReplayTranscriptEntry:
-    system_prompt: str   # Rendered question text shown to user
-    user_response: str   # User's verbatim response
-```
+**Parameters:**
+- `spec`: Complete PromptSpec (mode, fields, question text)
+- `patient_response`: Patient's actual response text
 
-**ExtractionDirective dataclass** - Extraction mode flags
-```python
-@dataclass(frozen=True)
-class ExtractionDirective:
-    mode: str = "REPLAY"
-    episode_blind: bool = True
-    target_episode_only: bool = True
-```
+**Returns:** Complete prompt text ready for LLM (string)
 
-**RPReplayInput dataclass** - Complete replay boundary object
-```python
-@dataclass(frozen=True)
-class RPReplayInput:
-    episode_anchor: EpisodeAnchor
-    clarification_transcript: List[ReplayTranscriptEntry]
-    extraction_directive: ExtractionDirective
+**Raises:**
+- `TypeError`: If inputs wrong type
+- `PromptBuildError`: If spec invalid or mode not implemented
+- `NotImplementedError`: If mode is REPLAY or CLARIFICATION_EXIT (future)
+
+**Prompt Structure (PRIMARY mode):**
+```
+You are a medical data extractor for ophthalmology consultations.
+
+PRIMARY FIELD
+Field ID: vl_onset_speed
+Meaning: visual loss onset speed
+Description: how quickly visual loss developed
+Type: categorical
+Valid values:
+  - acute (seconds to minutes)
+  - subacute (hours to days)
+  - chronic (weeks or longer)
+
+ADDITIONAL CONTEXT - You may also extract these fields if clearly mentioned:
+  - Field ID: vl_pattern
+    Meaning: visual loss pattern
+    Type: categorical
+    Valid values: constant, fluctuating, progressive
+
+Patient response: "It happened really quickly, over a few seconds"
+
+Extract any relevant fields from the patient's response.
+Return ONLY valid JSON using the Field ID as the key:
+{
+  "vl_onset_speed": "value",
+  "other_field_id": "value"
+}
+
+Rules:
+- PRIMARY focus on vl_onset_speed
+- You MAY extract additional fields if clearly mentioned
+- If the patient response does not clearly contain extractable information for the listed fields, return {}
+- Do not guess. Do not infer.
+- Use exact Field IDs as JSON keys
+- For categorical fields, use exact valid values
+- For boolean fields, use true or false (lowercase, no quotes)
 ```
 
 **Factory Function:**
 ```python
-create_replay_input_from_context(
-    episode_id: str,
-    resolution_status: ClarificationResolution,
-    transcript_entries: List[tuple],
-    applied_policy: Optional[ForcedResolutionPolicy] = None
-) -> RPReplayInput
+def create_prompt_spec(
+    question: Dict[str, Any],
+    mode: PromptMode = PromptMode.PRIMARY,
+    next_questions: Optional[List[Dict[str, Any]]] = None,
+    episode_anchor: Optional[EpisodeAnchor] = None
+) -> PromptSpec
 ```
 
-**Construction Invariants (fail early):**
-- `resolution_status` cannot be `NEGATED` (replay illegal for negation)
-- `episode_id` required for `CONFIRMED` and `FORCED` status
-- `applied_policy` required for `FORCED`, forbidden otherwise
-- `clarification_transcript` cannot be empty (except `UNRESOLVABLE`)
+**Parameters:**
+- `question`: Primary question dict from ruleset
+  - Required keys: `field`, `field_type`, `field_label`, `field_description`, `question`
+  - Conditional: `valid_values` (if categorical)
+  - Optional: `definitions`
+- `mode`: Extraction mode (default PRIMARY)
+- `next_questions`: Optional list of question dicts for metadata window
+- `episode_anchor`: Optional episode context (future use)
+
+**Returns:** Validated PromptSpec ready for PromptBuilder
+
+**Raises:** `PromptBuildError` if any question missing required fields or invalid
+
+**Validation (Fail-Fast):**
+
+| Check | Enforcement |
+|-------|-------------|
+| `field_label` present and non-empty | Hard error (PromptBuildError) |
+| `field_description` present and non-empty | Hard error (PromptBuildError) |
+| `field_type` in FieldType enum | Hard error (PromptBuildError) |
+| Categorical fields have `valid_values` | Hard error (PromptBuildError) |
+| `valid_values` non-empty list | Hard error (PromptBuildError) |
+| `definitions` cover all `valid_values` | Hard error (PromptBuildError) |
+| `question_text` non-empty | Hard error (PromptBuildError) |
 
 **Key Design Decisions:**
-- Write-once, single-use boundary object
-- Authored by Dialogue Manager, consumed by RPReplayAdapter
-- Immutable (frozen dataclasses)
-- Validation at construction prevents illegal states reaching adapter
-- RP never infers episode identity (anchor is authoritative)
+- Fail-fast validation (no warnings, no partial builds)
+- Does not repair or guess missing metadata
+- PromptSpec is frozen (immutable contract)
+- Field IDs used as JSON keys, labels provide semantic meaning
+- "Do not guess. Do not infer" instruction prevents hallucination
+- Patient response included in prompt (not added later by ResponseParser)
+- PromptBuilder is stateless (same PromptSpec → same prompt text)
+- Validation happens at PromptSpec creation, not during build()
+
+**Custom Exception:**
+```python
+class PromptBuildError(Exception):
+    """Raised when prompt cannot be built due to invalid/incomplete spec"""
+```
+- Used for all validation failures
+- Signals configuration/ruleset errors (not runtime issues)
+- Should be caught by DialogueManager and logged
 
 **Usage Pattern:**
 ```python
-from rp_replay_input import (
-    RPReplayInput,
-    EpisodeAnchor,
-    ReplayTranscriptEntry,
-    ExtractionDirective,
-    create_replay_input_from_context
-)
-from state_manager_v2 import ClarificationResolution
-
-# Construct via factory (simpler)
-replay_input = create_replay_input_from_context(
-    episode_id="1",
-    resolution_status=ClarificationResolution.CONFIRMED,
-    transcript_entries=[
-        ("Where was the headache?", "On the right side")
-    ]
+from prompt_builder import (
+    PromptBuilder, 
+    create_prompt_spec, 
+    PromptMode,
+    PromptBuildError
 )
 
-# Or construct directly
-replay_input = RPReplayInput(
-    episode_anchor=EpisodeAnchor(
-        episode_id="1",
-        resolution_status=ClarificationResolution.CONFIRMED,
-        applied_policy=None
-    ),
-    clarification_transcript=[
-        ReplayTranscriptEntry(
-            system_prompt="Where was the headache?",
-            user_response="On the right side"
-        )
-    ],
-    extraction_directive=ExtractionDirective()
-)
+# Get question from ruleset
+question = {
+    'field': 'vl_onset_speed',
+    'field_type': 'categorical',
+    'field_label': 'visual loss onset speed',
+    'field_description': 'how quickly visual loss developed',
+    'question': 'How quickly did it develop?',
+    'valid_values': ['acute', 'subacute', 'chronic'],
+    'definitions': {...}
+}
 
-# Get formatted transcript for debugging
-print(replay_input.get_transcript_text())
+# Create PromptSpec
+try:
+    spec = create_prompt_spec(
+        question=question,
+        mode=PromptMode.PRIMARY,
+        next_questions=[...]  # Optional metadata window
+    )
+except PromptBuildError as e:
+    # Ruleset configuration error - log and fail
+    logger.error(f"Invalid question metadata: {e}")
+    raise
+
+# Build prompt
+builder = PromptBuilder()
+patient_response = "It happened really quickly"
+prompt_text = builder.build(spec, patient_response)
+
+# Pass to ResponseParser
+result = response_parser.parse(
+    prompt_text=prompt_text,
+    patient_response=patient_response,
+    expected_field='vl_onset_speed',
+    turn_id='turn_09'
+)
 ```
 
 **Integration:**
-- Produced by: Dialogue Manager (on clarification exit)
-- Consumed by: RPReplayAdapter (exclusively)
-- Depends on: ClarificationResolution (from state_manager_v2), ForcedResolutionPolicy (from clarification_templates)
+- Called by: DialogueManager (after question selection, before extraction)
+- Input from: QuestionSelector (question dicts from ruleset)
+- Output to: ResponseParser (pre-built prompt text)
+- Shares nothing with: Other modules (pure function)
 
 ---
 
-### Response Parser Replay Adapter (response_parser_replay.py)
+**HuggingFace Client (hf_client_v2.py)**
 
-**Purpose:** Thin wrapper that constructs deterministic replay prompts and calls Response Parser
+**Purpose:** Centralized model loading and inference wrapper with 4-bit quantization, JSON generation, and error handling
 
-**Role:** Isolates replay semantics from Dialogue Manager and Response Parser, acts as prompt compiler + call adapter
+**Role:** Provides unified interface for loading HuggingFace models and generating completions. Handles CUDA memory management, prompt formatting, and JSON repair. Shared instance injected into all LLM-consuming components (ResponseParser, SummaryGenerator, EpisodeHypothesisGenerator) to avoid loading multiple model copies.
 
-**Components:**
+**Class:** `HuggingFaceClient`
 
-**Exception Classes:**
-- `RPReplayAdapterError` - Base exception for adapter errors
-- `IllegalReplayStateError` - Raised when replay attempted in illegal state
-- `InvalidTranscriptError` - Raised when transcript contains invalid entries
-
-**RPReplayAdapter class** - Main adapter
+**Constructor:**
 ```python
-class RPReplayAdapter:
-    def __init__(self, response_parser):
-        """Initialize with Response Parser reference"""
+def __init__(
+    self,
+    model_name: str,
+    load_in_4bit: bool = True,
+    device: str = "cuda",
+    auto_format: bool = True
+) -> None
+```
+
+**Parameters:**
+- `model_name`: HuggingFace model identifier (e.g., "mistralai/Mistral-7B-Instruct-v0.2")
+- `load_in_4bit`: Use NF4 quantization with bfloat16 compute (reduces VRAM by ~75%)
+- `device`: "cuda" or "cpu"
+- `auto_format`: Auto-detect and apply model-specific prompt formatting via PromptFormatter
+
+**Initialization:**
+- Validates CUDA availability if requested
+- Loads tokenizer with pad_token fallback (sets to eos_token or adds [PAD])
+- Configures BitsAndBytesConfig for 4-bit quantization if enabled
+- Loads model with quantization and device mapping
+- Initializes optional PromptFormatter for model-specific templates
+- Logs GPU memory usage after loading
+- Raises RuntimeError if CUDA requested but unavailable
+- Raises torch.cuda.OutOfMemoryError if insufficient VRAM
+- Sets model to eval mode
+
+**Primary Methods:**
+
+**1. Text Generation:**
+```python
+def generate(
+    self,
+    prompt: str,
+    max_tokens: int = 256,
+    temperature: float = 0.3,
+    return_diagnostics: bool = False,
+    apply_formatting: bool = True
+) -> Union[str, Dict[str, Any]]
+```
+
+**Returns:**
+- `str`: Generated text (when `return_diagnostics=False`)
+- `dict`: `{'text': str, 'diagnostics': {...}}` (when `return_diagnostics=True`)
+
+**Diagnostics include:**
+- `prompt_tokens`: Input token count
+- `completion_tokens`: Output token count (excluding pad tokens)
+- `total_tokens`: Sum of prompt and completion
+- `latency_ms`: Generation time in milliseconds
+- `formatting_applied`: Whether prompt formatting was used
+
+**Process:**
+1. Applies prompt formatting if `auto_format=True` and `apply_formatting=True`
+2. Tokenizes input and moves to device
+3. Logs GPU memory before generation
+4. Generates with temperature-based sampling (deterministic if temperature=0.0)
+5. Logs GPU memory after generation
+6. Decodes output excluding prompt tokens
+7. Filters pad tokens from completion count
+
+**2. JSON Generation:**
+```python
+def generate_json(
+    self,
+    prompt: str,
+    max_tokens: int = 256,
+    temperature: float = 0.0,
+    return_diagnostics: bool = False,
+    apply_formatting: bool = True
+) -> Union[str, Dict[str, Any]]
+```
+
+**Specialization:** Optimized for structured output:
+- Uses `temperature=0.0` by default for deterministic JSON
+- Strips markdown code blocks (```json, ```)
+- Extracts content between first { and last }
+- Performs basic brace balancing (adds missing } or removes extra })
+- Returns JSON string (caller must `json.loads()`)
+- Adds `json_repair_applied` flag to diagnostics if repairs made
+
+**Note:** Basic repair only handles dict output (not arrays). Production systems should use jsonrepair library.
+
+**3. Model Status:**
+```python
+def is_loaded(self) -> bool
+```
+Returns True if model and tokenizer are loaded and ready.
+
+```python
+def get_model_info(self) -> Dict[str, Any]
+```
+Returns metadata:
+- `model_name`, `device`, `is_loaded`, `auto_format`
+- `formatter`: PromptFormatter info if enabled
+- GPU memory stats (allocated, reserved, peak) if CUDA
+
+**Error Handling:**
+
+| Scenario | Behaviour |
+|----------|-----------|
+| CUDA requested but unavailable | Raises RuntimeError during __init__ |
+| Model loading fails | Raises original exception with logging |
+| CUDA OOM during loading | Logs diagnostic advice, raises torch.cuda.OutOfMemoryError |
+| CUDA OOM during generation | Logs prompt/max_tokens, raises torch.cuda.OutOfMemoryError |
+| Model not loaded when calling generate | Raises RuntimeError |
+| No braces in JSON repair | Logs warning, returns text as-is (will fail parse downstream) |
+
+**Key Design Decisions:**
+- **Dependency injection**: No singleton pattern, allows testing with multiple instances
+- **Fail fast**: Infrastructure errors (CUDA OOM, model load failures) raise immediately
+- **Duck typing contract**: Consumers check for `generate_json()` and `is_loaded()` methods
+- **Model-agnostic**: No hardcoded prompt templates (delegated to PromptFormatter)
+- **Shared instance pattern**: Single client injected into all LLM consumers to avoid loading model multiple times
+- **Conservative JSON repair**: Only handles basic dict cleanup, doesn't risk corrupting valid output
+- **Diagnostics optional**: Zero overhead when not needed
+
+**Usage Pattern:**
+```python
+from hf_client_v2 import HuggingFaceClient
+
+# Initialize once at startup
+hf_client = HuggingFaceClient(
+    "mistralai/Mistral-7B-Instruct-v0.2",
+    load_in_4bit=True,
+    auto_format=True
+)
+
+# Inject into all LLM consumers
+response_parser = ResponseParser(hf_client)
+summary_gen = SummaryGenerator(hf_client)
+ehg = EpisodeHypothesisGenerator(hf_client)
+
+# Generate text
+result = hf_client.generate(
+    "Explain cataracts in simple terms",
+    max_tokens=128,
+    temperature=0.3
+)
+
+# Generate JSON
+json_str = hf_client.generate_json(
+    "Return JSON: {\"symptom\": \"blur\", \"duration\": \"2 weeks\"}",
+    max_tokens=64,
+    temperature=0.0
+)
+data = json.loads(json_str)  # Caller parses
+```
+
+**Integration:**
+- **Instantiated by:** Flask app (app.py) during startup
+- **Injected into:** ResponseParser, SummaryGenerator, EpisodeHypothesisGenerator constructors
+- **Used by:** Any component requiring LLM inference
+- **Shares resources with:** All LLM-consuming modules (single model instance in memory)
+
+---
+
+### Episode Narrowing Prompt (episode_narrowing_prompt.py)
+**Purpose:** Generate deterministic coercion prompts to force conversation back to current episode when ambiguity is detected
+**Role:** When Episode Safety Status indicates ambiguity (AMBIGUOUS_MULTIPLE or AMBIGUOUS_PIVOT), generates a polite but firm prompt that acknowledges the ambiguity and redirects focus to the current episode. This is coercion, not clarification - no attempt to resolve which episode the user meant.
+
+**Primary Function:**
+def build_episode_narrowing_prompt(status: EpisodeSafetyStatus) -> str
+
+**Parameters:**
+status: Must be AMBIGUOUS_MULTIPLE or AMBIGUOUS_PIVOT
+ (Never called with SAFE_TO_EXTRACT - that's a caller error)
+
+Returns: Complete coercion prompt string (without follow-up question)
+
+**Prompt Variants:**
+
+Variant 1 - AMBIGUOUS_MULTIPLE (multiple problems mentioned):
+"Thank you — it sounds like your last answer may have mentioned more than one problem.
+To avoid mixing things up, I'm going to focus on the current problem for now."
+
+Variant 2 - AMBIGUOUS_PIVOT (different problem mentioned):
+"Thank you — it sounds like your last answer may have mentioned a different problem.
+To avoid mixing things up, I'm going to focus on the current problem for now."
+
+**Semantic Structure:**
+1. Acknowledgment: "Thank you"
+2. Detection statement: "It sounds like..."
+3. Constraint assertion: "I'm going to focus on..."
+
+**Error Handling:**
+Scenario                          Behaviour
+status = SAFE_TO_EXTRACT          Raises ValueError (fail fast - caller error)
+status = AMBIGUOUS_MULTIPLE       Returns variant 1 string
+status = AMBIGUOUS_PIVOT          Returns variant 2 string
+Unexpected EpisodeSafetyStatus    Raises ValueError (unreachable given enum exhaustiveness)
+
+**Key Design Decisions:**
+- Deterministic - exactly one literal string per status, no randomization, no templates
+- No placeholders - returned string is complete (DialogueManager appends question separately)
+- Fails fast on caller error - if called with SAFE_TO_EXTRACT, raises immediately
+- No clinical concepts - does not mention "episode", "earlier problem", or specific symptoms
+- No resolution attempt - does not ask user to clarify or choose between options
+- String literals in code - obvious in code review, no hidden configuration files
+- Coercion, not negotiation - asserts what system will do, not what user should do
+
+**Usage Pattern:**
+from episode_narrowing_prompt import build_episode_narrowing_prompt
+from episode_safety_status import EpisodeSafetyStatus, assess_episode_safety
+from episode_hypothesis_signal import EpisodeHypothesisSignal
+
+# DialogueManager flow
+ehg_signal = episode_hypothesis_generator.generate_hypothesis(user_input, ...)
+safety_status = assess_episode_safety(ehg_signal)
+
+if safety_status != EpisodeSafetyStatus.SAFE_TO_EXTRACT:
+    # Generate coercion prompt
+    coercion = build_episode_narrowing_prompt(safety_status)
     
-    def run(self, replay_input: RPReplayInput, 
-            question_context: Optional[Dict] = None) -> Dict[str, Any]:
-        """Execute replay extraction"""
-```
-
-**Prompt Assembly (fixed sections, fixed order):**
-
-Section A: Synthetic System Header
-- Episode anchor (ID, resolution status, applied policy)
-- Extraction constraints (no cross-episode inference, no ambiguity resolution)
-
-Section B: Clarification Transcript
-- Replayable turns only, in original order
-- Format: `System: {rendered_text}` / `User: {response}`
-
-Section C: Extraction Directive
-- Mode flag, episode binding, explicit instruction
-
-**Helper Function:**
-```python
-filter_replayable_turns(
-    clarification_turns: List[ClarificationTurn]
-) -> List[ReplayTranscriptEntry]
-# Filters to replayable turns, validates rendered_text exists
-# Raises InvalidTranscriptError if replayable turn missing rendered_text
-```
-
-**What the adapter explicitly does NOT do:**
-- State writes
-- Episode selection
-- Clinical correctness validation
-- Fallback logic
-- Orchestration
-- Decisions
-
-**Guard Checks:**
-- Missing episode anchor raises `IllegalReplayStateError`
-- NEGATED resolution raises `IllegalReplayStateError`
-- Empty transcript (except UNRESOLVABLE) raises `InvalidTranscriptError`
-
-**Provenance Tagging:**
-- All extracted fields tagged with `source: 'clarification_replay'`
-- Resolution status and applied policy included in provenance
-- Metadata includes replay context (episode_id, transcript entry count)
-
-**Usage Pattern:**
-```python
-from response_parser_replay import RPReplayAdapter, filter_replayable_turns
-from rp_replay_input import create_replay_input_from_context
-
-# Initialize adapter
-adapter = RPReplayAdapter(response_parser)
-
-# Prepare transcript from ClarificationContext
-replayable_entries = filter_replayable_turns(
-    clarification_context.transcript
-)
-
-# Create replay input
-replay_input = create_replay_input_from_context(
-    episode_id="1",
-    resolution_status=ClarificationResolution.CONFIRMED,
-    transcript_entries=[
-        (entry.system_prompt, entry.user_response)
-        for entry in replayable_entries
-    ]
-)
-
-# Execute replay
-result = adapter.run(replay_input)
-# result contains extracted fields with replay provenance
-```
+    # DialogueManager appends the pending question
+    system_output = f"{coercion}\n\nFor the current problem, {pending_question['question']}"
+    
+    # Return early - skip Parser, skip commit, re-ask same question
+    return turn_result(system_output, same_pending_question, ...)
 
 **Integration:**
-- Depends on: RPReplayInput, Response Parser, ClarificationTurn
-- Called by: Dialogue Manager (on clarification exit, replacing direct RP call)
-- Calls: Response Parser with REPLAY_EXTRACTION mode
+- Called by: DialogueManager._process_clinical_turn()
+- Input from: episode_safety_status.assess_episode_safety()
+- Output used by: DialogueManager (composed with pending question)
+- Trigger condition: safety_status ∈ {AMBIGUOUS_MULTIPLE, AMBIGUOUS_PIVOT}
+- Integration point: After EHG signal assessed, before Response Parser called
 
----
-
-### Evidence Validator (evidence_validator.py)
-
-**Purpose:** Safety-critical validation primitive that verifies LLM-generated text spans actually exist in original user input
-
-**Role:** Prevents hallucination-based corruption of clinical data by ensuring extracted evidence is verbatim from user input
-
-**Core Function:**
-
-**validate_evidence_span(span: str, raw_text: str) -> bool**
-- Returns `True` if span exists as substring in raw_text
-- Returns `False` for all invalid/error cases (never raises exceptions)
-- Unicode NFKC normalization + case-insensitive matching (casefold)
-- Literal substring matching (punctuation and internal whitespace preserved)
-- Leading/trailing whitespace trimmed from span only
-- No fuzzy matching, no semantic interpretation
-
-**Usage:**
-```python
-from evidence_validator import validate_evidence_span
-
-user_input = "I had sudden vision loss in my right eye"
-llm_span = "sudden vision loss"
-
-is_valid = validate_evidence_span(llm_span, user_input)
-# is_valid = True (span exists in input)
-
-hallucinated_span = "gradual vision loss"
-is_valid = validate_evidence_span(hallucinated_span, user_input)
-# is_valid = False (span not in input)
-```
-
-**Design Principles:**
-- Dumb, mechanical, predictable
-- Fail safely (return False, never raise)
-- Zero dependencies beyond standard library
-- No business logic or interpretation
-
-**Integration:**
-- Used by: Clarification Parser (future - for Mention Object validation)
-- Used by: Any module that needs evidence verification
-- Not used by: Response Parser (assumes LLM output is trustworthy within episode)
-
-**Safety Properties:**
-- Deterministic fallback for failed validation
-- Never allows unverified spans to proceed
-- Logging of validation failures for auditing
+**Current Limitations (by design):**
+- Only two prompt variants (sufficient for hardware-constrained coercion strategy)
+- No support for actual clarification (deferred until 70B model available)
+- No tracking of which problems were mentioned (no attempt to enumerate)
+- No preservation of clinical data from ambiguous turns (discarded entirely)
 
 ---
 
@@ -568,26 +994,6 @@ is_valid = validate_evidence_span(hallucinated_span, user_input)
 
 ---
 
-
-## Module Dependencies
-
-```
-Response Parser      â†’ (no dependencies)
-Episode Classifier   â†’ (no dependencies)
-State Manager        â†’ clinical_data_model.json, conversation_modes.py
-Question Selector    â†’ ruleset_v2.json
-JSON Formatter       â†’ json_schema.json, State Manager export
-Summary Generator    â†’ State Manager export
-RP Replay Input      â†’ state_manager_v2 (ClarificationResolution), clarification_templates (ForcedResolutionPolicy)
-RP Replay Adapter    â†’ rp_replay_input, Response Parser, state_manager_v2
-Dialogue Manager     â†’ All above modules (orchestrator)
-Flask/Console        â†’ Dialogue Manager only
-```
-
-**Key insight:** Only Dialogue Manager depends on other modules. All other modules are independent workers with no cross-dependencies. The RP Replay Adapter is a thin boundary layer that depends on RP Replay Input and Response Parser but makes no decisions.
-
----
-
 ## Critical Contracts
 
 ### State Manager â†’ JSON Formatter Contract (v1.1.0)
@@ -617,35 +1023,3 @@ See: `state_manager_formatter_contract_v1.json` for full specification
 - Pure function evaluation
 - No side effects
 - Same episode_data always produces same result
-
-See: `ruleset_v2.json` for full specification
-
----
-
-## Design Principles Applied to Modules
-
-**Single Responsibility**
-- Each module has one clear job
-- No overlapping authority between modules
-
-**Stateless Where Possible**
-- Question Selector: pure function
-- Episode Classifier: pure function
-- Response Parser: no consultation state
-- Only State Manager holds consultation data
-
-**Explicit Dependencies**
-- Modules receive all inputs as parameters
-- No hidden state in dictionaries
-- Configuration files loaded explicitly
-
-**Best-Effort Continuation**
-- Modules log errors but don't crash
-- Return error indicators in output
-- Allow consultation to continue when possible
-
-**Testability**
-- Pure functions easy to test
-- Explicit inputs/outputs
-- No hidden dependencies
-- Stateless modules can be tested in isolation
