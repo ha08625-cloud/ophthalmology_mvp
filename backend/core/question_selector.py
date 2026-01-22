@@ -11,18 +11,25 @@ Design principles:
 - Stateless: All state comes from episode_data parameter
 - Deterministic: Same input always produces same output
 - Pure functions: No side effects
-- Fail fast: Validate ruleset on initialization
-- Immutable: Ruleset frozen at load, returns are copies
+- Fail fast: Validate ruleset on initialization, assert invariants at runtime
+- Immutable: Ruleset frozen at load, returns are QuestionOutput dataclasses
 
 Contracts:
 - episode_data must contain:
     - questions_answered: set[str]
+    - questions_satisfied: set[str]
     - follow_up_blocks_activated: set[str]
     - follow_up_blocks_completed: set[str]
     - Extracted fields as key-value pairs
-- Returns are always copies (safe to mutate)
+- Returns: QuestionOutput (immutable dataclass) or None
 - Caller is responsible for trigger idempotency (check_triggers returns
   ALL matching blocks, not just new ones)
+
+Runtime Assertions:
+- Public methods validate invariants with AssertionError
+- These are permanent guards, not dev-only checks
+- AssertionErrors should propagate to Flask boundary for logging
+- Assertions catch contract drift and invalid state early
 
 DSL Semantics:
 - Missing field always evaluates to False for all operators
@@ -48,10 +55,11 @@ import copy
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Any, List
+
+from backend.contracts import QuestionOutput
 
 logger = logging.getLogger(__name__)
-
 
 class QuestionSelectorV2:
     """
@@ -60,9 +68,14 @@ class QuestionSelectorV2:
     Determines the next question based on episode state and medical protocol.
     Does not track any state internally - all state comes from episode_data.
     
+    V4 Changes:
+        - Returns QuestionOutput dataclass instead of dict
+        - Entry-point assertions validate invariants (permanent guards)
+        - AssertionErrors propagate to caller for logging
+    
     Thread Safety:
         Ruleset is deep-copied and frozen at initialization.
-        All public methods return copies, never internal references.
+        All public methods return immutable QuestionOutput objects.
     """
     
     # Required keys in episode_data
@@ -84,7 +97,7 @@ class QuestionSelectorV2:
         Initialize selector with ruleset.
         
         Args:
-            ruleset_path: Path to data/ruleset_v2.json
+            ruleset_path: Path to ruleset.json
             
         Raises:
             FileNotFoundError: If ruleset doesn't exist
@@ -125,29 +138,35 @@ class QuestionSelectorV2:
     
     def _validate_episode_data(self, episode_data: dict) -> None:
         """
-        Validate episode_data structure and types.
+        Validate episode_data structure and types using assertions.
+        
+        V4: Changed from TypeError/ValueError to AssertionError.
+        These are permanent invariant guards that should propagate to
+        the Flask boundary for logging.
         
         Args:
             episode_data: Input to validate
             
         Raises:
-            TypeError: If episode_data is wrong type or has wrong field types
-            ValueError: If required keys are missing
+            AssertionError: If episode_data violates invariants
         """
+        # Type check
         if not isinstance(episode_data, dict):
-            raise TypeError(f"episode_data must be dict, got {type(episode_data).__name__}")
+            raise AssertionError(
+                f"episode_data must be dict, got {type(episode_data).__name__}"
+            )
         
         # Check required keys exist
         missing = self.REQUIRED_EPISODE_KEYS - set(episode_data.keys())
         if missing:
-            raise ValueError(f"episode_data missing required keys: {missing}")
+            raise AssertionError(f"episode_data missing required keys: {missing}")
         
         # Validate types of tracking sets
         for key in self.REQUIRED_EPISODE_KEYS:
             value = episode_data[key]
             # Accept both set and list (State Manager may serialize sets as lists)
             if not isinstance(value, (set, list)):
-                raise TypeError(
+                raise AssertionError(
                     f"episode_data['{key}'] must be set or list, "
                     f"got {type(value).__name__}"
                 )
@@ -176,26 +195,58 @@ class QuestionSelectorV2:
         
         return copied
     
-    def get_next_question(self, episode_data: dict) -> Optional[dict]:
+    def _dict_to_question_output(self, question_dict: dict) -> QuestionOutput:
+        """
+        Convert internal question dict to QuestionOutput dataclass.
+        
+        This is the single conversion point from ruleset dict format
+        to the public QuestionOutput contract.
+        
+        Args:
+            question_dict: Internal question dict from ruleset
+            
+        Returns:
+            QuestionOutput: Immutable dataclass representation
+            
+        Note:
+            valid_values is converted from list to tuple for immutability.
+        """
+        valid_values = question_dict.get('valid_values')
+        if valid_values is not None:
+            valid_values = tuple(valid_values)
+        
+        return QuestionOutput(
+            id=question_dict['id'],
+            question=question_dict['question'],
+            field=question_dict['field'],
+            field_type=question_dict.get('field_type', 'text'),
+            type=question_dict.get('type', 'probe'),
+            valid_values=valid_values
+        )
+    
+    def get_next_question(self, episode_data: dict) -> Optional[QuestionOutput]:
         """
         Get next question for episode.
+        
+        V4 Changes:
+        - Returns QuestionOutput dataclass instead of dict
+        - Entry-point assertions validate invariants
         
         Args:
             episode_data: Complete episode state containing:
                 - questions_answered: set[str] or list[str]
+                - questions_satisfied: set[str] or list[str]
                 - follow_up_blocks_activated: set[str] or list[str]
                 - follow_up_blocks_completed: set[str] or list[str]
                 - [extracted fields]: e.g., vl_laterality, h_present, etc.
         
         Returns:
-            Question dict (copy) with keys: id, question, field, field_type, etc.
-            None if no more questions for this episode.
+            QuestionOutput (immutable dataclass) or None if no more questions.
             
         Raises:
-            TypeError: If episode_data has wrong types
-            ValueError: If episode_data missing required keys
+            AssertionError: If episode_data violates invariants
         """
-        # Validate input
+        # Validate input (raises AssertionError on failure)
         self._validate_episode_data(episode_data)
         
         # Defensive copy to prevent caller mutation affecting our logic
@@ -213,7 +264,7 @@ class QuestionSelectorV2:
         for block_id in sorted(pending_blocks):  # Deterministic order
             next_q = self._get_next_block_question(block_id, questions_satisfied, episode)
             if next_q is not None:
-                return copy.deepcopy(next_q)  # Return copy, not original
+                return self._dict_to_question_output(next_q)
         
         # Step 2: Walk sections in order
         for section_name in self.section_order:
@@ -230,19 +281,23 @@ class QuestionSelectorV2:
                 if not self._is_eligible(question, episode):
                     continue
                 
-                # Found next question - return copy
-                return copy.deepcopy(question)
+                # Found next question - convert to QuestionOutput
+                return self._dict_to_question_output(question)
         
         # Step 3: All done
         return None
     
-    def get_next_n_questions(self, current_question_id: str, n: int = 3) -> list:
+    def get_next_n_questions(self, current_question_id: str, n: int = 3) -> List[QuestionOutput]:
         """
         Get the next n questions in sequence after current_question_id.
         
         This method is used to build a metadata window for the Response Parser,
         allowing it to extract information for upcoming questions when patients
         volunteer information ahead of being asked.
+        
+        V4 Changes:
+        - Returns List[QuestionOutput] instead of list of dicts
+        - Entry-point assertions validate inputs
         
         Rules:
         - Returns only questions from the same symptom category (prefix)
@@ -257,15 +312,24 @@ class QuestionSelectorV2:
             n: Number of questions to return (default 3)
         
         Returns:
-            List of question dicts (copies), may be empty or shorter than n.
-            Each dict contains: id, question, field, field_type, valid_values, etc.
+            List of QuestionOutput (immutable dataclasses), may be empty or shorter than n.
+        
+        Raises:
+            AssertionError: If inputs violate invariants
         
         Examples:
-            get_next_n_questions("vl_5", 3) -> [vl_6, vl_7, vl_8]
-            get_next_n_questions("vl_20", 3) -> [vl_21]  # only 1 left
-            get_next_n_questions("vl_21", 3) -> []  # last question
-            get_next_n_questions("cp_8", 3) -> [cp_9]  # doesn't wrap to next category
+            get_next_n_questions("vl_5", 3) -> [QuestionOutput(id='vl_6',...), ...]
+            get_next_n_questions("vl_20", 3) -> [QuestionOutput(id='vl_21',...)]
+            get_next_n_questions("vl_21", 3) -> []
         """
+        # Entry-point assertions
+        if not isinstance(current_question_id, str):
+            raise AssertionError(
+                f"current_question_id must be str, got {type(current_question_id).__name__}"
+            )
+        if not isinstance(n, int):
+            raise AssertionError(f"n must be int, got {type(n).__name__}")
+        
         # Handle edge case: n <= 0
         if n <= 0:
             return []
@@ -326,11 +390,11 @@ class QuestionSelectorV2:
         # Sort by question number
         matching_questions.sort(key=lambda x: x[0])
         
-        # Find next n questions after current_num
+        # Find next n questions after current_num, convert to QuestionOutput
         result = []
         for q_num, question in matching_questions:
             if q_num > current_num:
-                result.append(copy.deepcopy(question))
+                result.append(self._dict_to_question_output(question))
                 if len(result) >= n:
                     break
         
@@ -347,15 +411,14 @@ class QuestionSelectorV2:
             set[str]: Block IDs that should be activated (e.g., {'block_1', 'block_3'})
             
         Raises:
-            TypeError: If episode_data has wrong types
-            ValueError: If episode_data missing required keys
+            AssertionError: If episode_data violates invariants
             
         Note:
             Returns ALL blocks whose conditions are met, not just new ones.
             Caller is responsible for idempotency - compare with existing
             activated set to find new activations.
         """
-        # Validate input
+        # Validate input (raises AssertionError on failure)
         self._validate_episode_data(episode_data)
         
         # Defensive copy
@@ -389,19 +452,22 @@ class QuestionSelectorV2:
             True if block is complete (all questions answered or ineligible)
             
         Raises:
-            TypeError: If episode_data has wrong types
-            ValueError: If episode_data missing required keys
+            AssertionError: If episode_data violates invariants
             
         Note:
             Ineligible questions are treated as implicitly skipped.
             If eligibility later changes (new data), block cannot reopen.
             This behavior will be revisited in V3 with contradiction detection.
         """
+        # Entry-point assertion for block_id
+        if not isinstance(block_id, str):
+            raise AssertionError(f"block_id must be str, got {type(block_id).__name__}")
+        
         if block_id not in self.follow_up_blocks:
             logger.warning(f"Unknown block: {block_id}")
             return True  # Treat unknown block as complete
         
-        # Validate input
+        # Validate input (raises AssertionError on failure)
         self._validate_episode_data(episode_data)
         
         # Defensive copy
