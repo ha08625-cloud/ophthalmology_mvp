@@ -25,7 +25,7 @@ Contracts:
 - Caller is responsible for trigger idempotency (check_triggers returns
   ALL matching blocks, not just new ones)
 
-Runtime Assertions:
+Runtime Assertions (V4):
 - Public methods validate invariants with AssertionError
 - These are permanent guards, not dev-only checks
 - AssertionErrors should propagate to Flask boundary for logging
@@ -57,9 +57,15 @@ import logging
 from pathlib import Path
 from typing import Optional, Any, List
 
-from backend.contracts import QuestionOutput
+# Flat import for server testing
+# When copying to local, adjust to: from backend.contracts import QuestionOutput
+try:
+    from backend.contracts import QuestionOutput
+except ImportError:
+    from contracts import QuestionOutput
 
 logger = logging.getLogger(__name__)
+
 
 class QuestionSelectorV2:
     """
@@ -200,20 +206,38 @@ class QuestionSelectorV2:
         Convert internal question dict to QuestionOutput dataclass.
         
         This is the single conversion point from ruleset dict format
-        to the public QuestionOutput contract.
+        to the public QuestionOutput contract. QuestionOutput contains
+        everything needed by downstream consumers (primarily Prompt Builder).
         
         Args:
-            question_dict: Internal question dict from ruleset
+            question_dict: Internal question dict from ruleset containing:
+                - id: Question identifier (required)
+                - question: Question text (required)
+                - field: Target field name (required)
+                - field_type: 'text', 'boolean', 'categorical' (default 'text')
+                - type: 'probe' or 'conditional' (default 'probe')
+                - valid_values: List of allowed values for categorical (optional)
+                - field_label: Human-readable field label (optional)
+                - field_description: Field extraction guidance (optional)
+                - definitions: Dict mapping values to descriptions (optional)
             
         Returns:
             QuestionOutput: Immutable dataclass representation
             
         Note:
-            valid_values is converted from list to tuple for immutability.
+            - valid_values list is converted to tuple for immutability
+            - definitions dict is converted to tuple of tuples for immutability
         """
+        # Convert valid_values list to tuple (immutable)
         valid_values = question_dict.get('valid_values')
         if valid_values is not None:
             valid_values = tuple(valid_values)
+        
+        # Convert definitions dict to tuple of tuples (immutable)
+        # Format: ((key1, val1), (key2, val2), ...)
+        definitions = question_dict.get('definitions')
+        if definitions is not None and isinstance(definitions, dict):
+            definitions = tuple((k, v) for k, v in definitions.items())
         
         return QuestionOutput(
             id=question_dict['id'],
@@ -221,7 +245,10 @@ class QuestionSelectorV2:
             field=question_dict['field'],
             field_type=question_dict.get('field_type', 'text'),
             type=question_dict.get('type', 'probe'),
-            valid_values=valid_values
+            valid_values=valid_values,
+            field_label=question_dict.get('field_label'),
+            field_description=question_dict.get('field_description'),
+            definitions=definitions
         )
     
     def get_next_question(self, episode_data: dict) -> Optional[QuestionOutput]:
