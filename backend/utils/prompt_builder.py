@@ -2,6 +2,7 @@
 Prompt Builder - Construct extraction prompts from structured intent
 
 Responsibilities:
+- Convert QuestionOutput (from Question Selector) into extraction prompts
 - Convert PromptSpec into deterministic prompt text
 - Validate semantic completeness (field labels, descriptions)
 - Enforce prompt structure and ordering
@@ -16,14 +17,27 @@ NOT responsible for:
 Design principles:
 - Fail-fast validation (no partial builds)
 - Prompt construction is medical logic, not language work
-- PromptSpec is a compiled intent, not raw storage
+- QuestionOutput is the primary input contract from Question Selector
+- PromptSpec is an internal compiled intent
 - Field IDs for output, labels for semantic meaning
+
+V4 Changes:
+- Added create_prompt_spec_from_question_output() as primary factory
+- QuestionOutput now contains field_label, field_description, definitions
+- Deprecated create_prompt_spec() (dict-based) in favor of QuestionOutput version
 """
 
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
+
+# Import QuestionOutput from contracts
+# Flat import for server testing
+try:
+    from backend.contracts import QuestionOutput
+except ImportError:
+    from contracts import QuestionOutput
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +91,8 @@ class FieldSpec:
     """
     Complete specification for a single extractable field.
     
-    Compiled from ruleset entry. Contains all semantic information
-    needed to instruct extraction for this field.
+    Compiled from QuestionOutput or ruleset entry. Contains all semantic
+    information needed to instruct extraction for this field.
     
     Validation enforced at construction - fail-fast.
     """
@@ -183,7 +197,7 @@ class PromptBuilder:
     """
     Build extraction prompts from PromptSpec.
     
-    Pure function: PromptSpec + patient_response → prompt_text
+    Pure function: PromptSpec + patient_response -> prompt_text
     No state, no side effects, deterministic output.
     """
     
@@ -210,7 +224,7 @@ class PromptBuilder:
                 f"patient_response must be string, got {type(patient_response).__name__}"
             )
         
-        # Build prompt based on mode
+        # Route to mode-specific builder
         if spec.mode == PromptMode.PRIMARY:
             return self._build_primary_prompt(spec, patient_response)
         elif spec.mode == PromptMode.REPLAY:
@@ -293,6 +307,170 @@ class PromptBuilder:
         return prompt
 
 
+# =============================================================================
+# Factory Functions
+# =============================================================================
+
+def create_prompt_spec_from_question_output(
+    question: QuestionOutput,
+    mode: PromptMode = PromptMode.PRIMARY,
+    next_questions: Optional[List[QuestionOutput]] = None,
+    episode_anchor: Optional[EpisodeAnchor] = None
+) -> PromptSpec:
+    """
+    Factory function: Convert QuestionOutput(s) into PromptSpec.
+    
+    This is the PRIMARY factory for creating PromptSpec from Question Selector
+    output. QuestionOutput contains all semantic information needed for prompt
+    construction (field_label, field_description, definitions).
+    
+    Args:
+        question: Primary QuestionOutput from Question Selector
+            Required attributes: id, question, field, field_type
+            Required for prompt: field_label, field_description
+            Conditional: valid_values (if categorical)
+            Optional: definitions
+        mode: Extraction mode (default PRIMARY)
+        next_questions: Optional list of QuestionOutput for metadata window
+        episode_anchor: Optional episode context (future use)
+        
+    Returns:
+        PromptSpec ready for PromptBuilder
+        
+    Raises:
+        PromptBuildError: If question missing required attributes
+        TypeError: If inputs have wrong type
+        
+    Examples:
+        >>> from backend.contracts import QuestionOutput
+        >>> q = QuestionOutput(
+        ...     id='vl_3',
+        ...     question='Which eye is affected?',
+        ...     field='vl_laterality',
+        ...     field_type='categorical',
+        ...     valid_values=('left', 'right', 'both'),
+        ...     field_label='visual loss laterality',
+        ...     field_description='Which eye or eyes are affected'
+        ... )
+        >>> spec = create_prompt_spec_from_question_output(q)
+    """
+    # Validate question is QuestionOutput
+    if not isinstance(question, QuestionOutput):
+        raise TypeError(
+            f"question must be QuestionOutput, got {type(question).__name__}"
+        )
+    
+    # Validate required prompt fields are present
+    if not question.field_label:
+        raise PromptBuildError(
+            f"QuestionOutput '{question.id}' missing field_label (required for prompt)"
+        )
+    
+    if not question.field_description:
+        raise PromptBuildError(
+            f"QuestionOutput '{question.id}' missing field_description (required for prompt)"
+        )
+    
+    # Convert primary question to FieldSpec
+    primary_field = _question_output_to_field_spec(question)
+    
+    # Convert next_questions if provided
+    additional_fields = []
+    if next_questions:
+        if not isinstance(next_questions, list):
+            raise TypeError(
+                f"next_questions must be list, got {type(next_questions).__name__}"
+            )
+        
+        for i, nq in enumerate(next_questions):
+            if not isinstance(nq, QuestionOutput):
+                raise TypeError(
+                    f"next_questions[{i}] must be QuestionOutput, "
+                    f"got {type(nq).__name__}"
+                )
+            
+            # Validate required prompt fields
+            if not nq.field_label:
+                raise PromptBuildError(
+                    f"next_questions[{i}] ('{nq.id}') missing field_label"
+                )
+            
+            if not nq.field_description:
+                raise PromptBuildError(
+                    f"next_questions[{i}] ('{nq.id}') missing field_description"
+                )
+            
+            additional_fields.append(_question_output_to_field_spec(nq))
+    
+    # Build and return PromptSpec
+    return PromptSpec(
+        mode=mode,
+        primary_field=primary_field,
+        question_text=question.question,
+        additional_fields=additional_fields if additional_fields else None,
+        episode_anchor=episode_anchor,
+        constraints=None  # Stub for future use
+    )
+
+
+def _question_output_to_field_spec(question: QuestionOutput) -> FieldSpec:
+    """
+    Convert QuestionOutput to FieldSpec.
+    
+    Internal helper. Handles conversion of:
+    - field_type string to FieldType enum
+    - definitions tuple-of-tuples to dict
+    - valid_values tuple to list
+    
+    Args:
+        question: QuestionOutput with required attributes
+        
+    Returns:
+        Validated FieldSpec
+        
+    Raises:
+        PromptBuildError: If field_type invalid
+    """
+    field_id = question.field
+    field_type_str = question.field_type
+    
+    # Normalize field_type to FieldType enum
+    try:
+        field_type = FieldType(field_type_str)
+    except ValueError:
+        valid_types = [ft.value for ft in FieldType]
+        raise PromptBuildError(
+            f"Invalid field_type '{field_type_str}' for field '{field_id}'. "
+            f"Valid types: {valid_types}"
+        )
+    
+    # Convert valid_values tuple to list (FieldSpec uses list)
+    valid_values = None
+    if question.valid_values is not None:
+        valid_values = list(question.valid_values)
+    
+    # Convert definitions tuple-of-tuples to dict
+    # QuestionOutput stores as: ((key1, val1), (key2, val2), ...)
+    # FieldSpec expects: {key1: val1, key2: val2, ...}
+    definitions = None
+    if question.definitions is not None:
+        definitions = dict(question.definitions)
+    
+    # Build FieldSpec (validation happens in __post_init__)
+    return FieldSpec(
+        field_id=field_id,
+        label=question.field_label,
+        description=question.field_description,
+        field_type=field_type,
+        valid_values=valid_values,
+        definitions=definitions
+    )
+
+
+# =============================================================================
+# Deprecated: Dict-based factory (for backward compatibility)
+# =============================================================================
+
 def create_prompt_spec(
     question: Dict[str, Any],
     mode: PromptMode = PromptMode.PRIMARY,
@@ -300,10 +478,13 @@ def create_prompt_spec(
     episode_anchor: Optional[EpisodeAnchor] = None
 ) -> PromptSpec:
     """
+    DEPRECATED: Use create_prompt_spec_from_question_output() instead.
+    
     Factory function: Convert ruleset question dict(s) into PromptSpec.
     
-    This is the compilation step from storage format to semantic intent.
-    Validates all required fields are present and complete.
+    This function is maintained for backward compatibility during transition.
+    New code should use create_prompt_spec_from_question_output() with
+    QuestionOutput objects from the Question Selector.
     
     Args:
         question: Primary question dict from ruleset
@@ -320,25 +501,12 @@ def create_prompt_spec(
         
     Raises:
         PromptBuildError: If any question missing required fields or invalid
-        
-    Examples:
-        >>> spec = create_prompt_spec(
-        ...     question={
-        ...         'field': 'vl_onset_speed',
-        ...         'field_type': 'categorical',
-        ...         'field_label': 'visual loss onset speed',
-        ...         'field_description': 'how quickly visual loss developed',
-        ...         'question': 'How quickly did it develop?',
-        ...         'valid_values': ['acute', 'subacute', 'chronic'],
-        ...         'definitions': {
-        ...             'acute': 'seconds to minutes',
-        ...             'subacute': 'hours to days',
-        ...             'chronic': 'weeks or longer'
-        ...         }
-        ...     },
-        ...     mode=PromptMode.PRIMARY
-        ... )
     """
+    logger.warning(
+        "create_prompt_spec() is deprecated. "
+        "Use create_prompt_spec_from_question_output() with QuestionOutput objects."
+    )
+    
     # Validate question is dict
     if not isinstance(question, dict):
         raise PromptBuildError(f"question must be dict, got {type(question).__name__}")
@@ -352,7 +520,7 @@ def create_prompt_spec(
         )
     
     # Convert primary question to FieldSpec
-    primary_field = _question_to_field_spec(question)
+    primary_field = _question_dict_to_field_spec(question)
     
     # Convert next_questions if provided
     additional_fields = []
@@ -375,7 +543,7 @@ def create_prompt_spec(
                     f"next_questions[{i}] missing required keys: {missing}"
                 )
             
-            additional_fields.append(_question_to_field_spec(nq))
+            additional_fields.append(_question_dict_to_field_spec(nq))
     
     # Build and return PromptSpec
     return PromptSpec(
@@ -388,11 +556,11 @@ def create_prompt_spec(
     )
 
 
-def _question_to_field_spec(question: Dict[str, Any]) -> FieldSpec:
+def _question_dict_to_field_spec(question: Dict[str, Any]) -> FieldSpec:
     """
     Convert ruleset question dict to FieldSpec.
     
-    Internal helper. Validates and normalizes field type.
+    DEPRECATED: Internal helper for deprecated create_prompt_spec().
     
     Args:
         question: Question dict with required keys
