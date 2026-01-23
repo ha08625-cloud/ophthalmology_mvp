@@ -15,6 +15,13 @@ Design principles:
 - Trust Response Parser with retry logic for ambiguity
 - Quarantine unmapped fields in dialogue metadata
 
+V4 Contract Changes:
+- Question Selector returns QuestionOutput dataclass (immutable)
+- Response Parser returns fields wrapped in ValueEnvelope
+- Dialogue Manager treats envelopes as opaque (no unwrapping)
+- Envelopes pass through to State Manager which collapses to provenance
+- QuestionOutput converted to dict for JSON storage in pending_question
+
 Public API:
 - handle(command) -> TurnResult | FinalReport | IllegalCommand
   ONLY public method. All interaction via commands.
@@ -22,10 +29,16 @@ Public API:
 
 import logging
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Optional, Dict, Any, List
 
 # Flat imports for server testing
+# When copying to local, adjust to: from backend.contracts import QuestionOutput
+try:
+    from backend.contracts import QuestionOutput
+except ImportError:
+    from contracts import QuestionOutput
+
 # When copying to local, adjust to: from backend.utils.helpers import ...
 from backend.utils.helpers import generate_consultation_id, generate_consultation_filename
 from backend.utils.episode_classifier import classify_field
@@ -71,14 +84,58 @@ class DialogueManagerV2:
     
     # Episode transition control
     MAX_TRANSITION_RETRIES = 2
+    
+    # TRANSITION_QUESTION is a dict (not QuestionOutput) because:
+    # 1. It bypasses Question Selector entirely (hardcoded meta-question)
+    # 2. It's used directly for prompt building and state storage
+    # 3. Converting to QuestionOutput would require immediate conversion back to dict
+    # This is an intentional design decision, not an oversight.
     TRANSITION_QUESTION = {
         'id': 'episode_transition',
         'question': 'Have you had any other episodes of eye-related problems you would like to discuss?',
         'field': 'additional_episodes_present',
         'field_type': 'boolean',
         'field_label': 'additional episodes present',
-        'field_description': 'whether patient has additional distinct episodes to discuss'
+        'field_description': 'whether patient has additional distinct episodes to discuss',
+        'type': 'probe'
     }
+    
+    @staticmethod
+    def _question_output_to_dict(question: QuestionOutput) -> Dict[str, Any]:
+        """
+        Convert QuestionOutput dataclass to dict for JSON serialization.
+        
+        Question Selector returns immutable QuestionOutput objects, but
+        pending_question must be stored in ConsultationState as a dict
+        for JSON round-trip serialization.
+        
+        Args:
+            question: QuestionOutput from Question Selector
+            
+        Returns:
+            Dict representation suitable for JSON storage
+            
+        Note:
+            - valid_values tuple is converted to list for JSON compatibility
+            - definitions tuple of tuples is converted to dict for JSON compatibility
+        """
+        result = {
+            'id': question.id,
+            'question': question.question,
+            'field': question.field,
+            'field_type': question.field_type,
+            'type': question.type
+        }
+        if question.valid_values is not None:
+            result['valid_values'] = list(question.valid_values)
+        if question.field_label is not None:
+            result['field_label'] = question.field_label
+        if question.field_description is not None:
+            result['field_description'] = question.field_description
+        if question.definitions is not None:
+            # Convert tuple of tuples back to dict for JSON
+            result['definitions'] = dict(question.definitions)
+        return result
     
     def __init__(self, state_manager_class, question_selector, response_parser,
                  json_formatter, summary_generator, prompt_builder, episode_hypothesis_generator):
@@ -123,7 +180,7 @@ class DialogueManagerV2:
         # Extract symptom categories from ruleset (cached at init)
         self.symptom_categories = self._extract_symptom_categories(question_selector)
         
-        # Cache fieldÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢question mappings (derived from immutable ruleset)
+        # Cache fieldÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢question mappings (derived from immutable ruleset)
         # Used for marking questions satisfied when fields are extracted
         self._question_to_field = question_selector._question_to_field.copy()
         self._field_to_questions = {}
@@ -498,11 +555,11 @@ class DialogueManagerV2:
         state_manager, turn_count, current_episode_id, consultation_id = \
             self._initialize_new_consultation()
         
-        # Get first question
+        # Get first question (returns QuestionOutput)
         episode_data = state_manager.get_episode_for_selector(current_episode_id)
-        question_dict = self.selector.get_next_question(episode_data)
+        first_question = self.selector.get_next_question(episode_data)
         
-        if question_dict is None:
+        if first_question is None:
             # Shouldn't happen on first turn, but handle gracefully
             logger.error("No questions available on first turn")
             
@@ -527,6 +584,9 @@ class DialogueManagerV2:
                 consultation_complete=True
             )
         
+        # Convert QuestionOutput to dict for JSON storage
+        question_dict = self._question_output_to_dict(first_question)
+        
         # Build canonical snapshot
         canonical_snapshot = state_manager.snapshot_state()
         canonical_snapshot['consultation_id'] = consultation_id
@@ -544,7 +604,7 @@ class DialogueManagerV2:
         logger.info(f"Started consultation {consultation_id}")
         
         return TurnResult(
-            system_output=question_dict['question'],
+            system_output=first_question.question,  # Use attribute access
             state=state,
             debug={'first_question': True},
             turn_metadata={
@@ -858,10 +918,10 @@ class DialogueManagerV2:
         """
         episode_data = state_manager.get_episode_for_selector(current_episode_id)
         
-        # Get first question
-        question_dict = self.selector.get_next_question(episode_data)
+        # Get first question (returns QuestionOutput)
+        first_question = self.selector.get_next_question(episode_data)
         
-        if question_dict is None:
+        if first_question is None:
             # Shouldn't happen on first turn, but handle gracefully
             logger.error("No questions available on first turn")
             return self._build_turn_result(
@@ -879,8 +939,11 @@ class DialogueManagerV2:
                 previous_mode=previous_mode
             )
         
+        # Convert QuestionOutput to dict for JSON storage
+        question_dict = self._question_output_to_dict(first_question)
+        
         return self._build_turn_result(
-            system_output=question_dict['question'],
+            system_output=first_question.question,  # Use attribute access
             state_manager=state_manager,
             consultation_id=consultation_id,
             turn_count=turn_count + 1,
@@ -994,13 +1057,16 @@ class DialogueManagerV2:
         # Safety status is SAFE_TO_EXTRACT - proceed with normal flow
         logger.debug("Episode safety check passed - proceeding with extraction")
         
-        # Get next questions for multi-question metadata window
-        next_questions = self.selector.get_next_n_questions(
+        # Get next questions for multi-question metadata window (returns List[QuestionOutput])
+        next_questions_output = self.selector.get_next_n_questions(
             current_question_id=pending_question['id'],
             n=3
         )
         
-        # Get symptom category questions for prompt
+        # Convert QuestionOutput objects to dicts for prompt_spec
+        next_questions = [self._question_output_to_dict(q) for q in next_questions_output]
+        
+        # Get symptom category questions for prompt (already dicts from ruleset)
         symptom_category_questions = self._get_symptom_category_questions()
         
         # Build combined additional_fields from next_questions + symptom categories
@@ -1124,7 +1190,7 @@ class DialogueManagerV2:
             }
         )
         
-        # Get next question
+        # Get next question (returns QuestionOutput or None)
         episode_data = state_manager.get_episode_for_selector(current_episode_id)
         next_question = self.selector.get_next_question(episode_data)
         
@@ -1148,16 +1214,19 @@ class DialogueManagerV2:
                 previous_mode=previous_mode
             )
         else:
+            # Convert QuestionOutput to dict for storage
+            next_question_dict = self._question_output_to_dict(next_question)
+            
             # Continue with next question
             return self._build_turn_result(
-                system_output=next_question['question'],
+                system_output=next_question.question,  # Use attribute access
                 state_manager=state_manager,
                 consultation_id=consultation_id,
                 turn_count=turn_count + 1,
                 current_episode_id=current_episode_id,
                 awaiting_first_question=False,
                 awaiting_episode_transition=False,
-                pending_question=next_question,
+                pending_question=next_question_dict,
                 errors=errors,
                 debug={'parser_output': parse_result},
                 consultation_complete=False,
@@ -1233,19 +1302,49 @@ class DialogueManagerV2:
                 # Create new episode
                 new_episode_id = state_manager.create_episode()
                 
-                # Get first question for new episode
+                # Get first question for new episode (returns QuestionOutput)
                 episode_data = state_manager.get_episode_for_selector(new_episode_id)
                 first_question = self.selector.get_next_question(episode_data)
                 
+                # Defensive check: new episode should always have questions
+                if first_question is None:
+                    logger.error(f"No questions available for new episode {new_episode_id}")
+                    errors.append({
+                        'context': 'episode_transition',
+                        'error': f'No questions configured for episode {new_episode_id}',
+                        'episode_id': new_episode_id
+                    })
+                    return self._build_turn_result(
+                        system_output="Error: Unable to start new episode - no questions configured",
+                        state_manager=state_manager,
+                        consultation_id=consultation_id,
+                        turn_count=turn_count + 1,
+                        current_episode_id=new_episode_id,
+                        awaiting_first_question=False,
+                        awaiting_episode_transition=False,
+                        pending_question=None,
+                        errors=errors,
+                        debug={
+                            'parser_output': parse_result,
+                            'new_episode': new_episode_id,
+                            'error': 'no_questions_for_new_episode'
+                        },
+                        consultation_complete=True,
+                        previous_mode=previous_mode
+                    )
+                
+                # Convert QuestionOutput to dict for storage
+                first_question_dict = self._question_output_to_dict(first_question)
+                
                 return self._build_turn_result(
-                    system_output=f"Episode {new_episode_id} - {first_question['question']}",
+                    system_output=f"Episode {new_episode_id} - {first_question.question}",  # Use attribute
                     state_manager=state_manager,
                     consultation_id=consultation_id,
                     turn_count=turn_count + 1,
                     current_episode_id=new_episode_id,
                     awaiting_first_question=False,
                     awaiting_episode_transition=False,
-                    pending_question=first_question,
+                    pending_question=first_question_dict,
                     errors=errors,
                     debug={
                         'parser_output': parse_result,
@@ -1305,7 +1404,7 @@ class DialogueManagerV2:
         """
         Route extracted fields to episode or shared storage.
         
-        V3-GUARD: Centralizes all RP ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ State writes behind commit guard.
+        V3-GUARD: Centralizes all RP ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ State writes behind commit guard.
         
         Routing rules:
         - Episode fields: Prefix-based + guard-gated
