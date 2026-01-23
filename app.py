@@ -103,15 +103,25 @@ def start_consultation():
     Saves turn-0 to disk.
     Stores result in session for display.
     Redirects to /consult.
-    """
-    # Issue command
-    command = StartConsultation()
-    result = dialogue_manager.handle(command)
     
-    # Should always succeed
-    if isinstance(result, IllegalCommand):
-        logger.error(f"StartConsultation failed: {result.reason}")
-        return jsonify({'error': result.reason}), 400
+    V4: AssertionError handling at Flask boundary.
+    Invariant violations propagate from Question Selector and are caught here.
+    During prototype phase, we log and re-raise to fail loud.
+    """
+    try:
+        # Issue command
+        command = StartConsultation()
+        result = dialogue_manager.handle(command)
+        
+        # Should always succeed
+        if isinstance(result, IllegalCommand):
+            logger.error(f"StartConsultation failed: {result.reason}")
+            return jsonify({'error': result.reason}), 400
+    except AssertionError as e:
+        # Invariant violation - critical error in Question Selector or other module
+        # Log with full stack trace and re-raise during prototype
+        logger.critical(f"Invariant violation in start_consultation: {e}", exc_info=True)
+        raise  # Fail loud during prototype - produces 500 error with stack trace
     
     # Extract consultation_id from metadata
     consultation_id = result.turn_metadata['consultation_id']
@@ -184,6 +194,10 @@ def submit_turn():
     
     Loads state from disk, issues UserTurn command, saves result.
     Returns JSON with system_output + debug.
+    
+    V4: AssertionError handling at Flask boundary.
+    Invariant violations propagate from Question Selector and are caught here.
+    During prototype phase, we log and re-raise to fail loud.
     """
     consultation_id = session.get('consultation_id')
     
@@ -202,11 +216,17 @@ def submit_turn():
     if state is None:
         return jsonify({'error': 'Consultation not found on disk'}), 404
     
-    # Issue command
-    command = UserTurn(user_input=user_input, state=state)
-    result = dialogue_manager.handle(command)
+    try:
+        # Issue command
+        command = UserTurn(user_input=user_input, state=state)
+        result = dialogue_manager.handle(command)
+    except AssertionError as e:
+        # Invariant violation - critical error in Question Selector or other module
+        # Log with full stack trace and re-raise during prototype
+        logger.critical(f"Invariant violation in submit_turn: {e}", exc_info=True)
+        raise  # Fail loud during prototype - produces 500 error with stack trace
 
-# TEMPORARY DEBUG
+    # TEMPORARY DEBUG
     logger.info(f"DEBUG: result.debug keys: {result.debug.keys()}")
     if 'state_view' in result.debug:
         logger.info(f"DEBUG: state_view episodes: {len(result.debug['state_view'].get('episodes', []))}")
@@ -254,6 +274,10 @@ def finalize_consultation():
     
     Only valid if consultation_complete=True.
     Issues FinalizeConsultation command.
+    
+    V4: AssertionError handling at Flask boundary.
+    Invariant violations propagate from Question Selector and are caught here.
+    During prototype phase, we log and re-raise to fail loud.
     """
     consultation_id = session.get('consultation_id')
     
@@ -266,9 +290,15 @@ def finalize_consultation():
     if state is None:
         return jsonify({'error': 'Consultation not found on disk'}), 404
     
-    # Issue command
-    command = FinalizeConsultation(state=state)
-    result = dialogue_manager.handle(command)
+    try:
+        # Issue command
+        command = FinalizeConsultation(state=state)
+        result = dialogue_manager.handle(command)
+    except AssertionError as e:
+        # Invariant violation - critical error in Question Selector or other module
+        # Log with full stack trace and re-raise during prototype
+        logger.critical(f"Invariant violation in finalize_consultation: {e}", exc_info=True)
+        raise  # Fail loud during prototype - produces 500 error with stack trace
     
     if isinstance(result, IllegalCommand):
         return jsonify({'error': result.reason}), 400
