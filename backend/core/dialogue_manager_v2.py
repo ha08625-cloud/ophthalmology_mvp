@@ -21,6 +21,8 @@ V4 Contract Changes:
 - Dialogue Manager treats envelopes as opaque (no unwrapping)
 - Envelopes pass through to State Manager which collapses to provenance
 - QuestionOutput converted to dict for JSON storage in pending_question
+- Prompt Builder accepts QuestionOutput via create_prompt_spec_from_question_output()
+- _dict_to_question_output() converts stored dict back to QuestionOutput for prompt building
 
 Public API:
 - handle(command) -> TurnResult | FinalReport | IllegalCommand
@@ -47,7 +49,12 @@ from backend.core.episode_hypothesis_generator import EpisodeHypothesisGenerator
 from backend.utils.episode_safety_status import assess_episode_safety, EpisodeSafetyStatus
 from backend.utils.episode_narrowing_prompt import build_episode_narrowing_prompt
 from backend.utils.display_helpers import format_state_for_display
-from backend.utils.prompt_builder import PromptBuilder, create_prompt_spec, PromptMode, PromptBuildError
+from backend.utils.prompt_builder import (
+    PromptBuilder, 
+    create_prompt_spec_from_question_output, 
+    PromptMode, 
+    PromptBuildError
+)
 
 # Command and result types
 # When copying to local, adjust to: from backend.commands import ...
@@ -136,6 +143,48 @@ class DialogueManagerV2:
             # Convert tuple of tuples back to dict for JSON
             result['definitions'] = dict(question.definitions)
         return result
+    
+    @staticmethod
+    def _dict_to_question_output(question_dict: Dict[str, Any]) -> QuestionOutput:
+        """
+        Convert dict back to QuestionOutput dataclass.
+        
+        Used when we need to pass stored pending_question (dict) to
+        create_prompt_spec_from_question_output() which expects QuestionOutput.
+        
+        This is the inverse of _question_output_to_dict().
+        
+        Args:
+            question_dict: Dict representation (from JSON storage or ruleset)
+            
+        Returns:
+            QuestionOutput dataclass
+            
+        Note:
+            - valid_values list is converted to tuple for immutability
+            - definitions dict is converted to tuple of tuples for immutability
+        """
+        # Convert valid_values list to tuple (immutable)
+        valid_values = question_dict.get('valid_values')
+        if valid_values is not None:
+            valid_values = tuple(valid_values)
+        
+        # Convert definitions dict to tuple of tuples (immutable)
+        definitions = question_dict.get('definitions')
+        if definitions is not None and isinstance(definitions, dict):
+            definitions = tuple((k, v) for k, v in definitions.items())
+        
+        return QuestionOutput(
+            id=question_dict['id'],
+            question=question_dict['question'],
+            field=question_dict['field'],
+            field_type=question_dict.get('field_type', 'text'),
+            type=question_dict.get('type', 'probe'),
+            valid_values=valid_values,
+            field_label=question_dict.get('field_label'),
+            field_description=question_dict.get('field_description'),
+            definitions=definitions
+        )
     
     def __init__(self, state_manager_class, question_selector, response_parser,
                  json_formatter, summary_generator, prompt_builder, episode_hypothesis_generator):
@@ -412,30 +461,32 @@ class DialogueManagerV2:
             "active_symptom_categories": active_categories
         }
 
-    def _get_symptom_category_questions(self) -> List[Dict[str, Any]]:
+    def _get_symptom_category_questions(self) -> List[QuestionOutput]:
         """
-        Get full question dicts for symptom categories.
+        Get QuestionOutput objects for symptom categories.
         
-        Used to convert symptom categories to FieldSpec for prompt building.
+        Used to provide symptom category fields for prompt building.
         Only includes categories that have field_label and field_description.
         
+        V4: Returns List[QuestionOutput] instead of List[Dict] for use with
+        create_prompt_spec_from_question_output().
+        
         Returns:
-            List of question dicts for symptom category fields that can be
-            used with create_prompt_spec()
+            List of QuestionOutput objects for symptom category fields
         """
         if not hasattr(self.selector, 'sections'):
             return []
         
         gating_questions = self.selector.sections.get('gating_questions', [])
         
-        # Filter to only questions with required prompt metadata
+        # Filter to only questions with required prompt metadata and convert to QuestionOutput
         valid_questions = []
         for q in gating_questions:
             if ('field_label' in q and 
                 'field_description' in q and
                 'field' in q and
                 'field_type' in q):
-                valid_questions.append(q)
+                valid_questions.append(self._dict_to_question_output(q))
         
         logger.debug(
             f"Found {len(valid_questions)}/{len(gating_questions)} symptom categories "
@@ -1063,24 +1114,24 @@ class DialogueManagerV2:
             n=3
         )
         
-        # Convert QuestionOutput objects to dicts for prompt_spec
-        next_questions = [self._question_output_to_dict(q) for q in next_questions_output]
-        
-        # Get symptom category questions for prompt (already dicts from ruleset)
+        # Get symptom category questions (now returns List[QuestionOutput])
         symptom_category_questions = self._get_symptom_category_questions()
         
-        # Build combined additional_fields from next_questions + symptom categories
+        # Build combined additional_fields (all QuestionOutput objects)
         all_additional_questions = []
-        if next_questions:
-            all_additional_questions.extend(next_questions)
+        if next_questions_output:
+            all_additional_questions.extend(next_questions_output)
         if symptom_category_questions:
             all_additional_questions.extend(symptom_category_questions)
         
+        # Convert pending_question dict back to QuestionOutput for prompt building
+        pending_question_output = self._dict_to_question_output(pending_question)
+        
         # Build extraction prompt
         try:
-            # Create PromptSpec
-            prompt_spec = create_prompt_spec(
-                question=pending_question,
+            # Create PromptSpec from QuestionOutput (V4)
+            prompt_spec = create_prompt_spec_from_question_output(
+                question=pending_question_output,
                 mode=PromptMode.PRIMARY,
                 next_questions=all_additional_questions if all_additional_questions else None
             )
@@ -1262,9 +1313,12 @@ class DialogueManagerV2:
         """
         # Parse transition response (no next_questions for meta-question)
         try:
+            # Convert TRANSITION_QUESTION dict to QuestionOutput for prompt building (V4)
+            transition_question_output = self._dict_to_question_output(self.TRANSITION_QUESTION)
+            
             # Build extraction prompt for transition question
-            prompt_spec = create_prompt_spec(
-                question=self.TRANSITION_QUESTION,
+            prompt_spec = create_prompt_spec_from_question_output(
+                question=transition_question_output,
                 mode=PromptMode.PRIMARY,
                 next_questions=None  # No metadata window for transition
             )
