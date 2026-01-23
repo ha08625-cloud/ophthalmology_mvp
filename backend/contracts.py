@@ -80,6 +80,10 @@ class QuestionOutput:
     """
     Immutable question representation returned by Question Selector.
     
+    QuestionOutput is the complete specification for a question, containing
+    everything needed by downstream consumers (primarily Prompt Builder for
+    Response Parser). The Dialogue Manager passes this through unchanged.
+    
     Replaces raw dict returns for:
     - Type safety (IDE autocomplete, static analysis)
     - Immutability (prevents accidental mutation)
@@ -93,32 +97,48 @@ class QuestionOutput:
             Format: {symptom_prefix}_{number}
         question: Question text shown to user.
             Example: "Is the vision loss in one eye or both eyes?"
-        field: Target field name for extracted data.
+        field: Target field name for extracted data (used as JSON key).
             Example: 'vl_laterality', 'h_duration'
         field_type: Data type hint for the field.
-            Values: 'text', 'string', 'boolean', 'enum', 'integer', 'float'
+            Values: 'text', 'boolean', 'categorical'
             Default: 'text'
         type: Question classification.
             Values: 'probe' (always asked), 'conditional' (depends on prior answers)
             Default: 'probe'
-        valid_values: Allowed values for enum/categorical fields.
+        valid_values: Allowed values for categorical fields.
             Tuple (not list) to ensure immutability.
-            None for free-text fields.
+            None for free-text and boolean fields.
             Example: ('sudden', 'gradual', 'unsure')
+        field_label: Human-readable semantic label for the field.
+            Used by Prompt Builder to explain field meaning to LLM.
+            Example: 'visual loss laterality'
+        field_description: Detailed description of what the field captures.
+            Used by Prompt Builder to guide extraction.
+            Example: 'Which eye or eyes are affected by the visual loss'
+        definitions: Value definitions for categorical fields.
+            Maps valid_values to human-readable explanations.
+            Used by Prompt Builder to help LLM understand value semantics.
+            Example: {'sudden': 'seconds to minutes', 'gradual': 'hours to days'}
+            None if not applicable or not provided in ruleset.
     
     Examples:
         >>> q = QuestionOutput(
         ...     id='vl_3',
         ...     question='Which eye is affected?',
         ...     field='vl_laterality',
-        ...     field_type='enum',
+        ...     field_type='categorical',
         ...     type='conditional',
-        ...     valid_values=('left', 'right', 'both')
+        ...     valid_values=('left', 'right', 'both'),
+        ...     field_label='visual loss laterality',
+        ...     field_description='Which eye or eyes are affected by the visual loss',
+        ...     definitions=None
         ... )
         >>> q.id
         'vl_3'
         >>> q.valid_values
         ('left', 'right', 'both')
+        >>> q.field_label
+        'visual loss laterality'
         
         # Attribute access (not dict access)
         >>> q['id']  # TypeError - not subscriptable
@@ -126,8 +146,10 @@ class QuestionOutput:
         'vl_3'
     
     Note:
-        valid_values is a Tuple, not a List, to maintain immutability.
-        When creating from ruleset dict, convert with tuple(list_value).
+        - valid_values is a Tuple, not a List, to maintain immutability.
+          When creating from ruleset dict, convert with tuple(list_value).
+        - definitions uses Tuple[Tuple[str, str], ...] instead of Dict for
+          immutability. Convert with tuple((k, v) for k, v in dict.items()).
     """
     id: str
     question: str
@@ -135,3 +157,6 @@ class QuestionOutput:
     field_type: str = "text"
     type: str = "probe"
     valid_values: Optional[Tuple[str, ...]] = None
+    field_label: Optional[str] = None
+    field_description: Optional[str] = None
+    definitions: Optional[Tuple[Tuple[str, str], ...]] = None
