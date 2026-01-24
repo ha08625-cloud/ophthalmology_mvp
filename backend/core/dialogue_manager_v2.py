@@ -1,32 +1,9 @@
 """
-Dialogue Manager V2 - Multi-episode consultation orchestration (Functional Core)
+Orchestrator module:
 
-Responsibilities:
-- Coordinate question-answer loop across multiple episodes
-- Route fields to episode-specific or shared storage
-- Handle episode transitions with retry logic
-- Generate final outputs (JSON + summary)
-- Error handling and logging
+Coordinates question selection, response parsing, and state persistence
+across episode transitions. Delegates business logic to specialized modules.
 
-Design principles:
-- Ephemeral per turn (no consultation state held between turns)
-- Functional core with serialized state in/out
-- Thin orchestration layer (business logic in specialized modules)
-- Trust Response Parser with retry logic for ambiguity
-- Quarantine unmapped fields in dialogue metadata
-
-V4 Contract Changes:
-- Question Selector returns QuestionOutput dataclass (immutable)
-- Response Parser returns fields wrapped in ValueEnvelope
-- Dialogue Manager treats envelopes as opaque (no unwrapping)
-- Envelopes pass through to State Manager which collapses to provenance
-- QuestionOutput converted to dict for JSON storage in pending_question
-- Prompt Builder accepts QuestionOutput via create_prompt_spec_from_question_output()
-- _dict_to_question_output() converts stored dict back to QuestionOutput for prompt building
-
-Public API:
-- handle(command) -> TurnResult | FinalReport | IllegalCommand
-  ONLY public method. All interaction via commands.
 """
 
 import logging
@@ -34,14 +11,8 @@ from datetime import datetime
 from dataclasses import dataclass, asdict
 from typing import Optional, Dict, Any, List
 
-# Flat imports for server testing
-# When copying to local, adjust to: from backend.contracts import QuestionOutput
-try:
-    from backend.contracts import QuestionOutput
-except ImportError:
-    from contracts import QuestionOutput
+from backend.contracts import QuestionOutput
 
-# When copying to local, adjust to: from backend.utils.helpers import ...
 from backend.utils.helpers import generate_consultation_id, generate_consultation_filename
 from backend.utils.episode_classifier import classify_field
 from backend.utils.conversation_modes import ConversationMode
@@ -56,8 +27,6 @@ from backend.utils.prompt_builder import (
     PromptBuildError
 )
 
-# Command and result types
-# When copying to local, adjust to: from backend.commands import ...
 from backend.commands import (
     ConsultationState,
     StartConsultation,
@@ -72,31 +41,14 @@ logger = logging.getLogger(__name__)
 
 class DialogueManagerV2:
     """
-    Orchestrates multi-episode ophthalmology consultation
-    
-    Functional core design:
-    - Ephemeral per turn (configs cached, state external)
-    - handle(command) transforms state deterministically
-    - No implicit state accumulation
-    
-    Public API:
-    - handle(command: Command) -> TurnResult | FinalReport | IllegalCommand
-    
-    Private/internal methods:
-    - All other methods are implementation details
+    Only public method: handle(command)
+
     """
     
-    # Commands that trigger early exit
     EXIT_COMMANDS = {"quit", "exit", "stop"}
-    
-    # Episode transition control
     MAX_TRANSITION_RETRIES = 2
     
-    # TRANSITION_QUESTION is a dict (not QuestionOutput) because:
-    # 1. It bypasses Question Selector entirely (hardcoded meta-question)
-    # 2. It's used directly for prompt building and state storage
-    # 3. Converting to QuestionOutput would require immediate conversion back to dict
-    # This is an intentional design decision, not an oversight.
+    # TRANSITION_QUESTION stored as dict not QuestionOutput
     TRANSITION_QUESTION = {
         'id': 'episode_transition',
         'question': 'Have you had any other episodes of eye-related problems you would like to discuss?',
@@ -111,20 +63,6 @@ class DialogueManagerV2:
     def _question_output_to_dict(question: QuestionOutput) -> Dict[str, Any]:
         """
         Convert QuestionOutput dataclass to dict for JSON serialization.
-        
-        Question Selector returns immutable QuestionOutput objects, but
-        pending_question must be stored in ConsultationState as a dict
-        for JSON round-trip serialization.
-        
-        Args:
-            question: QuestionOutput from Question Selector
-            
-        Returns:
-            Dict representation suitable for JSON storage
-            
-        Note:
-            - valid_values tuple is converted to list for JSON compatibility
-            - definitions tuple of tuples is converted to dict for JSON compatibility
         """
         result = {
             'id': question.id,
@@ -146,30 +84,10 @@ class DialogueManagerV2:
     
     @staticmethod
     def _dict_to_question_output(question_dict: Dict[str, Any]) -> QuestionOutput:
-        """
-        Convert dict back to QuestionOutput dataclass.
-        
-        Used when we need to pass stored pending_question (dict) to
-        create_prompt_spec_from_question_output() which expects QuestionOutput.
-        
-        This is the inverse of _question_output_to_dict().
-        
-        Args:
-            question_dict: Dict representation (from JSON storage or ruleset)
-            
-        Returns:
-            QuestionOutput dataclass
-            
-        Note:
-            - valid_values list is converted to tuple for immutability
-            - definitions dict is converted to tuple of tuples for immutability
-        """
-        # Convert valid_values list to tuple (immutable)
         valid_values = question_dict.get('valid_values')
         if valid_values is not None:
             valid_values = tuple(valid_values)
         
-        # Convert definitions dict to tuple of tuples (immutable)
         definitions = question_dict.get('definitions')
         if definitions is not None and isinstance(definitions, dict):
             definitions = tuple((k, v) for k, v in definitions.items())
@@ -189,44 +107,19 @@ class DialogueManagerV2:
     def __init__(self, state_manager_class, question_selector, response_parser,
                  json_formatter, summary_generator, prompt_builder, episode_hypothesis_generator):
         """
-        Initialize Dialogue Manager V2 with module references (NOT instances)
-        
-        Caches:
-        - Module classes/constructors
-        - Config file paths
-        - Rulesets/schemas (loaded once)
-        
-        Does NOT cache:
-        - Consultation state
-        - Dialogue history
-        - Current episode tracking
-        
-        Args:
-            state_manager_class: StateManagerV2 class (not instance)
-            question_selector: QuestionSelectorV2 instance (stateless, safe to cache)
-            response_parser: ResponseParserV2 instance (stateless, safe to cache)
-            json_formatter: JSONFormatterV2 instance (stateless, safe to cache)
-            summary_generator: SummaryGeneratorV2 instance (stateless, safe to cache)
-            prompt_builder: PromptBuilder instance (stateless, safe to cache)
-            episode_hypothesis_generator: EpisodeHypothesisGenerator instance (stateless, safe to cache)
-            
-        Raises:
-            TypeError: If any required module is missing or wrong type
+        Initialize with module references
         """
-        # Validate module interfaces
         self._validate_modules(state_manager_class, question_selector, response_parser,
                                json_formatter, summary_generator, prompt_builder, episode_hypothesis_generator)
         
-        # Cache module references (configs only, no state)
         self.state_manager_class = state_manager_class
-        self.selector = question_selector  # Stateless, safe to cache
-        self.parser = response_parser      # Stateless, safe to cache
-        self.json_formatter = json_formatter  # Stateless, safe to cache
-        self.summary_generator = summary_generator  # Stateless, safe to cache
-        self.prompt_builder = prompt_builder  # Stateless, safe to cache
-        self.episode_hypothesis_generator = episode_hypothesis_generator  # Stateless, safe to cache
+        self.selector = question_selector
+        self.parser = response_parser
+        self.json_formatter = json_formatter
+        self.summary_generator = summary_generator
+        self.prompt_builder = prompt_builder
+        self.episode_hypothesis_generator = episode_hypothesis_generator
                
-        # Extract symptom categories from ruleset (cached at init)
         self.symptom_categories = self._extract_symptom_categories(question_selector)
         
         # Cache fieldÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢question mappings (derived from immutable ruleset)
