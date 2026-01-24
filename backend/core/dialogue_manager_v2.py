@@ -122,7 +122,6 @@ class DialogueManagerV2:
                
         self.symptom_categories = self._extract_symptom_categories(question_selector)
         
-        # Cache fieldÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢question mappings (derived from immutable ruleset)
         # Used for marking questions satisfied when fields are extracted
         self._question_to_field = question_selector._question_to_field.copy()
         self._field_to_questions = {}
@@ -187,20 +186,7 @@ class DialogueManagerV2:
             raise TypeError("episode_hypothesis_generator must have callable generate_hypothesis() method")
     
     def _commit_allowed(self, mode: ConversationMode) -> bool:
-        """
-        Policy decision: Allow episode field commits for current mode?
-        
-        Guard placement rationale:
-        - DialogueManager owns conversation mode
-        - DialogueManager owns episode routing logic
-        - DialogueManager owns safety policy
-        
-        Args:
-            mode: Current conversation mode enum
-            
-        Returns:
-            bool: True if episode commits permitted, False otherwise
-            
+        """   
         Current implementation:
             Always returns True (preparation for V3 ambiguity blocking)
             
@@ -209,23 +195,10 @@ class DialogueManagerV2:
             - MODE_CLARIFICATION: block commits
             - MODE_EPISODE_EXTRACTION: allow commits
         """
-        # V3-GUARD: Preparation stub
-        # Always permit commits until Episode Hypothesis Manager wired
-        return True
     
     def _log_commit_block(self, fields: Dict[str, Any], mode: ConversationMode, episode_id: int) -> None:
         """
-        Record structured event when episode commits are blocked.
-        
-        This creates an audit trail for:
-        - Forced resolution transparency
-        - Replay debugging
-        - Mode transition validation
-        
-        Args:
-            fields: Parsed fields that were blocked
-            mode: Conversation mode that triggered block
-            episode_id: Target episode for blocked commit
+        Record structured event when episode commits are blocked for audit
             
         Logs at WARNING level with structured data.
         Does NOT modify state.
@@ -244,29 +217,11 @@ class DialogueManagerV2:
         )
         
         # V3-FUTURE: Add to state_manager audit log or clarification buffer
-        # For now, logging only
     
     def _extract_symptom_categories(self, question_selector) -> List[str]:
         """
         Extract symptom category field names from ruleset gating questions.
-        
-        Pulls clinical metadata from QuestionSelector at initialization time.
-        Cached as instance variable - no runtime overhead.
-        
-        Args:
-            question_selector: QuestionSelectorV2 instance with loaded ruleset
-            
-        Returns:
-            list: Symptom category field names (e.g., ['vl_present', 'cp_present', ...])
-            
-        Raises:
-            ValueError: If ruleset structure is invalid or gating questions missing
-            
-        Examples:
-            >>> symptom_categories = self._extract_symptom_categories(selector)
-            >>> # ['vl_present', 'cp_present', 'vp_present', ...]
         """
-        # Fail fast: Check selector has ruleset attribute
         if not hasattr(question_selector, 'sections'):
             raise ValueError(
                 "QuestionSelector missing 'sections' attribute. "
@@ -275,7 +230,6 @@ class DialogueManagerV2:
         
         sections = question_selector.sections
         
-        # Fail fast: Check gating_questions section exists
         if 'gating_questions' not in sections:
             raise ValueError(
                 "Ruleset missing 'sections.gating_questions'. "
@@ -291,13 +245,11 @@ class DialogueManagerV2:
                 "Expected at least one gating question."
             )
         
-        # Extract field names from gating questions
         symptom_fields = []
         for question in gating_questions:
             if 'field' in question:
                 symptom_fields.append(question['field'])
         
-        # Fail fast: Check we extracted at least one field
         if not symptom_fields:
             raise ValueError(
                 f"Ruleset 'sections.gating_questions' has {len(gating_questions)} questions "
@@ -314,22 +266,6 @@ class DialogueManagerV2:
     ) -> Dict[str, Any]:
         """
         Build current episode context for Episode Hypothesis Generator.
-        
-        Provides context about what the current episode is about, so EHG can
-        detect when the patient pivots to a different problem.
-        
-        V1 (Simple): Just active symptom categories
-        Future: Add presenting complaint, temporal context, laterality, etc.
-        
-        Args:
-            state_manager: Rehydrated state manager
-            episode_id: Current episode ID
-            
-        Returns:
-            dict: Episode context for EHG
-                {
-                    "active_symptom_categories": ["visual_loss", "headache", ...]
-                }
         """
         active_categories = []
         
