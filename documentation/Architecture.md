@@ -140,6 +140,70 @@ pivot_confidence_band: Pivot confidence (low, medium, high)
 - Shared data listed, not summarized
 - Tracks token usage (warns at 32k context)
 
+### Semantic contracts and envelopes
+
+**Purpose:** Type-safe contracts and provenance tracking at module boundaries.
+
+### Core Concepts
+
+**Definition Layer vs Enforcement Layer:** Semantic contracts that define expected shapes and meanings, but do not enforce validation. This allows architectural clarity while preserving iteration flexibility.
+
+**Envelope Pattern:** Values extracted by Response Parser from patient responses are wrapped in `ValueEnvelope` objects that carry provenance and confidence metadata. Envelopes flow through the system and are collapsed at storage time by the state manager
+
+### Components
+
+**Contracts Module** (contracts.py)
+   - `ValueEnvelope`: Frozen dataclass wrapping extracted values with source and confidence
+   - `QuestionOutput`: Frozen dataclass representing questions from Question Selector
+   - No validation logic, no dependencies on other modules
+   - Pure definition layer
+
+### QuestionOutput Contract
+
+Question Selector returns `QuestionOutput` frozen dataclass instead of raw dicts:
+
+```python
+@dataclass(frozen=True)
+class QuestionOutput:
+    id: str                    # 'vl_3'
+    question: str              # 'Which eye is affected?'
+    field: str                 # 'vl_laterality'
+    field_type: str            # 'categorical'
+    type: str                  # 'probe' | 'conditional'
+    valid_values: Tuple[str]   # ('left', 'right', 'both')
+    field_label: str           # 'visual loss laterality'
+    field_description: str     # 'Which eye or eyes are affected'
+    definitions: Tuple[Tuple]  # (('left', 'left eye only'), ...)
+```
+
+**Consumers:**
+- Dialogue Manager: Accesses `.id`, `.question`, `.field` (attribute access, not dict access)
+- Prompt Builder: Uses `.field_label`, `.field_description`, `.valid_values`, `.definitions` to construct extraction prompts
+
+### Runtime Assertions
+
+Question Selector entry points include permanent assertions that fail loudly on invariant violations:
+
+```python
+def get_next_question(self, episode_data: dict) -> Optional[QuestionOutput]:
+    if 'questions_answered' not in episode_data:
+        raise AssertionError("episode_data missing required key: questions_answered")
+    # ... additional assertions
+```
+
+**Error Handling Policy:**
+- Question Selector raises `AssertionError` on invariant violations
+- Dialogue Manager does not catch (failures propagate)
+- Flask routes catch at top level with critical logging, then re-raise (fail loud)
+
+### V4 Architecture Principles
+
+1. **Envelopes are ingress-time, not storage-time:** ValueEnvelope exists before values enter State Manager, not inside it.
+2. **Collapse, don't store:** Envelopes are collapsed into existing provenance system at write time, preserving metadata without changing storage structure.
+3. **Defense in depth:** Export methods call `strip_envelopes()` even though envelopes should already be collapsed, preventing leakage to legacy consumers.
+4. **Immutability for contracts:** Both `ValueEnvelope` and `QuestionOutput` are frozen dataclasses. Consumers cannot accidentally mutate shared data.
+5. **Assertions are permanent:** Runtime assertions in Question Selector are guards, not dev-only checks. They survive into production.
+
 ## Critical Data Flows
 
 ### Core Extraction Data Flow Per Turn (Simplified)
@@ -147,10 +211,13 @@ pivot_confidence_band: Pivot confidence (low, medium, high)
 1. **Transport Layer** passes user input + state snapshot to Dialogue Manager
 2. **Dialogue Manager** rehydrates State Manager from snapshot
 3. **Episode Hypothesis Generator** analyzes user input for episode ambiguity.  If safe, then response parser output is not blocked
-4. **Response Parser** extracts fields from user's text
+4. **Response Parser** returns:
+{'vl_laterality': ValueEnvelope(value='right', source='response_parser', confidence=0.95)}
 5. **Episode Classifier** determines where each field belongs
-6. **Dialogue Manager** stores fields via State Manager
-7. **Question Selector** determines next question based on episode data
+6. **Dialogue Manager** passes ValueEnvelope to State Manager. State Manager collapses envelope on write:
+    │   - Stores value: episode['vl_laterality'] = 'right'
+    │   - Stores provenance: episode['_provenance']['vl_laterality'] = {source, confidence_band, mode}
+7. **Question Selector** determines next question based on episode data, exports QuestionOutput
 8. **Dialogue Manager** builds TurnResult containing:
    - Canonical state snapshot (for next turn)
    - Clinical output (for display)
@@ -282,3 +349,4 @@ Flask/Console               Dialogue Manager only
 2. This aim is chosen at the cost of UX because we are working with very limited resources (12GB GPU and maximum 7B size model), so the natural language processing layer will never be robust enough to truly resolve episode ambiguity
 3. Once out of proof of concept and towards a production ready medical system, we will have access to higher grade hardware (2x32GB 5090 Geforce GPUs that can run a 70B size model)
 4. That will allow us to create a much more robust episode ambiguity layer which actually resolves episode ambiguity, for example creating new episodes and switching between them
+
