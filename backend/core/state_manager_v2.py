@@ -44,22 +44,9 @@ from datetime import datetime, timezone
 from enum import Enum
 from dataclasses import dataclass, field
 
-# Flat imports for server testing
-# When copying to local, adjust to: from backend.utils.conversation_modes import ...
-try:
-    from backend.utils.conversation_modes import ConversationMode, VALID_MODES
-except ImportError:
-    from conversation_modes import ConversationMode, VALID_MODES
+from backend.utils.conversation_modes import ConversationMode, VALID_MODES
+from backend.contracts import ValueEnvelope
 
-# V4: Envelope support for ingress-time provenance capture
-# When copying to local, adjust to: from backend.contracts import ValueEnvelope
-# and: from backend.utils.envelope_helpers import is_envelope, strip_envelopes
-try:
-    from backend.contracts import ValueEnvelope
-    from backend.utils.envelope_helpers import is_envelope, strip_envelopes
-except ImportError:
-    from contracts import ValueEnvelope
-    from envelope_helpers import is_envelope, strip_envelopes
 
 logger = logging.getLogger(__name__)
 
@@ -1007,7 +994,7 @@ class StateManagerV2:
         episode = self.episodes[index]
         
         # V4: Collapse envelope to value + provenance
-        if is_envelope(value):
+        if isinstance(value, ValueEnvelope):
             actual_value = value.value
             # Convert envelope metadata to existing provenance format
             provenance = {
@@ -1024,6 +1011,12 @@ class StateManagerV2:
         
         # Write value (provenance cannot exist without value)
         episode[field_name] = actual_value
+        # Assertion: envelopes must never be stored (collapse should have happened above)
+        if isinstance(actual_value, ValueEnvelope):
+            raise AssertionError(
+                f"ValueEnvelope stored directly in episode field '{field_name}'. "
+                "Envelopes must be collapsed to value + provenance, never stored."
+            )
         episode['timestamp_last_updated'] = datetime.now(timezone.utc).isoformat()
         
         # Store provenance (episode fields are not collections)
@@ -1328,7 +1321,7 @@ class StateManagerV2:
             )
         """
         # V4: Collapse envelope to value + provenance
-        if is_envelope(value):
+        if isinstance(value, ValueEnvelope):
             actual_value = value.value
             # Convert envelope metadata to existing provenance format
             provenance = {
@@ -1345,6 +1338,12 @@ class StateManagerV2:
         
         # Write value (provenance cannot exist without value)
         self.shared_data[field_name] = actual_value
+        # Assertion: envelopes must never be stored (collapse should have happened above)
+        if isinstance(actual_value, ValueEnvelope):
+            raise AssertionError(
+                f"ValueEnvelope stored directly in episode field '{field_name}'. "
+                "Envelopes must be collapsed to value + provenance, never stored."
+            )
         
         # Determine if this is a collection field (weakest-link applies)
         is_collection = field_name in COLLECTION_FIELDS
@@ -1675,10 +1674,10 @@ class StateManagerV2:
         # V4: strip_envelopes guarantees envelope-free output for legacy consumers
         # Note: Envelopes should already be collapsed at write time, but this
         # provides an extra safety layer at the export boundary.
-        return strip_envelopes({
+        return {
             'episodes': non_empty_episodes,
             'shared_data': self._serialize_shared_data(exclude_provenance=True)
-        })
+        }
     
     def export_for_json(self) -> Dict[str, Any]:
         """
@@ -1717,13 +1716,13 @@ class StateManagerV2:
         
         # MECHANISM: Ensure no envelopes leak to output (defense in depth)
         # V4: strip_envelopes guarantees envelope-free output for legacy consumers
-        return strip_envelopes({
+        return {
             'episodes': serializable_episodes,
             'shared_data': self._filter_provenance_for_summary(
                 self._serialize_shared_data(exclude_provenance=False)
             ),
             'dialogue_history': self._deep_copy(self.dialogue_history)
-        })
+        }
     
     # ========================
     # Utility Methods

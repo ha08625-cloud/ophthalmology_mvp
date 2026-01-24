@@ -134,8 +134,6 @@ class EpisodeHypothesisSignal:
 - No business logic (pure data structure)
 - Ready for future expansion (provenance, calibration metadata)
 
-**Status:** Stub implementation. Real EHG module not yet built.
-
 **Usage Pattern:**
 ```python
 from episode_hypothesis_signal import (
@@ -151,13 +149,12 @@ signal = EpisodeHypothesisSignal(
     pivot_confidence_band=ConfidenceBand.HIGH
 )
 
-# Stub usage (current):
-signal = EpisodeHypothesisSignal.no_ambiguity()
+# Signal interpreted by episode_safety_status.py to output AMBIGUOUS_MULTIPLE, AMBIGUOUS_PIVOT or SAFE_TO_EXTRACT
 ```
 
 **Integration:**
-- Produced by: Episode Hypothesis Generator (future)
-- Consumed by: Episode Hypothesis Manager (for mode transition logic)
+- Produced by: Episode Hypothesis Generator
+- Consumed by: Episode Safety Status
 - Referenced by: DialogueManager (for orchestration)
 
 ---
@@ -958,6 +955,91 @@ if safety_status != EpisodeSafetyStatus.SAFE_TO_EXTRACT:
 - No support for actual clarification (deferred until 70B model available)
 - No tracking of which problems were mentioned (no attempt to enumerate)
 - No preservation of clinical data from ambiguous turns (discarded entirely)
+
+---
+
+### Contracts (contracts.py)
+
+**Purpose:** Immutable data structures serving as semantic contracts between modules
+
+**Role:** Definition layer for cross-module data exchange - shapes and semantics without enforcement
+
+**Design Principles:**
+- Frozen dataclasses (immutable after creation)
+- No validation logic (contracts, not validators)
+- No dependencies on other modules
+- Definition layer only (no enforcement)
+
+**Components:**
+
+**ValueEnvelope dataclass** - Ingress-time wrapper for extracted values with provenance
+```python
+@dataclass(frozen=True)
+class ValueEnvelope:
+    value: Any          # The extracted clinical value
+    source: str         # Origin: 'response_parser', 'user_explicit', etc.
+    confidence: float   # 0.0-1.0, converted to band at write time
+```
+
+**Lifecycle:**
+1. Created by: Response Parser (at extraction)
+2. Passed through: Dialogue Manager (opaque, no unwrapping)
+3. Consumed by: State Manager (collapsed into provenance at write time)
+4. Never seen by: Question Selector, JSON Formatter, Summary Generator
+
+**QuestionOutput dataclass** - Complete question specification from Question Selector
+```python
+@dataclass(frozen=True)
+class QuestionOutput:
+    id: str                    # e.g., 'vl_3', 'h_2'
+    question: str              # Question text shown to user
+    field: str                 # Target field name (JSON key)
+    field_type: str            # 'text', 'boolean', 'categorical'
+    type: str                  # 'probe' or 'conditional'
+    valid_values: Optional[Tuple[str, ...]]           # For categorical
+    field_label: Optional[str]                        # Semantic label for LLM
+    field_description: Optional[str]                  # Extraction guidance
+    definitions: Optional[Tuple[Tuple[str, str], ...]] # Value explanations
+```
+
+**Note on immutability:**
+- `valid_values` uses Tuple, not List
+- `definitions` uses Tuple of Tuples, not Dict
+- Convert at creation: `tuple(list_value)`, `tuple((k,v) for k,v in dict.items())`
+
+**Usage Pattern:**
+```python
+from backend.contracts import ValueEnvelope, QuestionOutput
+
+# Response Parser produces envelopes:
+envelope = ValueEnvelope(
+    value='right',
+    source='response_parser',
+    confidence=0.95
+)
+
+# Question Selector produces questions:
+question = QuestionOutput(
+    id='vl_3',
+    question='Which eye is affected?',
+    field='vl_laterality',
+    field_type='categorical',
+    valid_values=('left', 'right', 'both'),
+    field_label='visual loss laterality',
+    field_description='Which eye or eyes are affected',
+    definitions=(('left', 'left eye only'), ('right', 'right eye only'))
+)
+
+# Convert definitions back to dict when needed:
+defs_dict = dict(question.definitions) if question.definitions else None
+```
+
+**Integration:**
+
+| Contract | Produced by | Consumed by |
+|----------|-------------|-------------|
+| ValueEnvelope | Response Parser | State Manager |
+| QuestionOutput | Question Selector | Prompt Builder, Dialogue Manager (passthrough) |
 
 ---
 
