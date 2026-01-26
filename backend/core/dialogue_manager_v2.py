@@ -20,12 +20,6 @@ from backend.core.episode_hypothesis_generator import EpisodeHypothesisGenerator
 from backend.utils.episode_safety_status import assess_episode_safety, EpisodeSafetyStatus
 from backend.utils.episode_narrowing_prompt import build_episode_narrowing_prompt
 from backend.utils.display_helpers import format_state_for_display
-from backend.utils.prompt_builder import (
-    PromptBuilder, 
-    create_prompt_spec_from_question_output, 
-    PromptMode, 
-    PromptBuildError
-)
 
 from backend.commands import (
     ConsultationState,
@@ -105,19 +99,15 @@ class DialogueManagerV2:
         )
     
     def __init__(self, state_manager_class, question_selector, response_parser,
-                 json_formatter, summary_generator, prompt_builder, episode_hypothesis_generator):
+                 json_formatter, summary_generator, episode_hypothesis_generator):
         """
         Initialize with module references
         """
-        self._validate_modules(state_manager_class, question_selector, response_parser,
-                               json_formatter, summary_generator, prompt_builder, episode_hypothesis_generator)
-        
         self.state_manager_class = state_manager_class
         self.selector = question_selector
         self.parser = response_parser
         self.json_formatter = json_formatter
         self.summary_generator = summary_generator
-        self.prompt_builder = prompt_builder
         self.episode_hypothesis_generator = episode_hypothesis_generator
                
         self.symptom_categories = self._extract_symptom_categories(question_selector)
@@ -143,48 +133,7 @@ class DialogueManagerV2:
             f"{len(self.symptom_categories)} symptom categories, "
             f"{len(self._question_to_field)} question-field mappings)"
         )
-    
-    def _validate_modules(self, state_manager_class, question_selector, response_parser,
-                         json_formatter, summary_generator, prompt_builder, episode_hypothesis_generator):
-        """Validate module interfaces"""
-        # Validate QuestionSelectorV2 interface
-        if not (hasattr(question_selector, 'get_next_question') and 
-                callable(getattr(question_selector, 'get_next_question', None))):
-            raise TypeError("question_selector must have callable get_next_question() method")
-        
-        if not (hasattr(question_selector, 'check_triggers') and 
-                callable(getattr(question_selector, 'check_triggers', None))):
-            raise TypeError("question_selector must have callable check_triggers() method")
-        
-        if not (hasattr(question_selector, 'is_block_complete') and 
-                callable(getattr(question_selector, 'is_block_complete', None))):
-            raise TypeError("question_selector must have callable is_block_complete() method")
-        
-        # Validate ResponseParser interface
-        if not (hasattr(response_parser, 'parse') and 
-                callable(getattr(response_parser, 'parse', None))):
-            raise TypeError("response_parser must have callable parse() method")
-        
-        # Validate JSONFormatterV2 interface
-        if not (hasattr(json_formatter, 'format_state') and 
-                callable(getattr(json_formatter, 'format_state', None))):
-            raise TypeError("json_formatter must have callable format_state() method")
-        
-        # Validate SummaryGeneratorV2 interface
-        if not (hasattr(summary_generator, 'generate') and 
-                callable(getattr(summary_generator, 'generate', None))):
-            raise TypeError("summary_generator must have callable generate() method")
-        
-        # Validate PromptBuilder interface
-        if not (hasattr(prompt_builder, 'build') and 
-                callable(getattr(prompt_builder, 'build', None))):
-            raise TypeError("prompt_builder must have callable build() method")
-        
-        # Validate EpisodeHypothesisGenerator interface
-        if not (hasattr(episode_hypothesis_generator, 'generate_hypothesis') and 
-                callable(getattr(episode_hypothesis_generator, 'generate_hypothesis', None))):
-            raise TypeError("episode_hypothesis_generator must have callable generate_hypothesis() method")
-    
+
     def _commit_allowed(self, mode: ConversationMode) -> bool:
         """   
         Current implementation:
@@ -850,25 +799,11 @@ class DialogueManagerV2:
     ) -> TurnResult:
         """
         Process answer to regular question
-        
-        Args:
-            user_input: Patient response
-            state_manager: Rehydrated state manager
-            consultation_id: Consultation ID
-            turn_count: Current turn count
-            current_episode_id: Current episode ID
-            pending_question: Question being answered
-            errors: List of errors from previous turns
-            previous_mode: Previous conversation mode (V3)
-            
-        Returns:
-            TurnResult with next question or episode transition
         """
         if pending_question is None:
             raise ValueError("No pending question in state")
         
-        # V3: Build current episode context for EHG
-        # Simple V1: just the active symptom categories
+        # Build current episode context for EHG
         current_episode_context = self._build_episode_context_for_ehg(
             state_manager=state_manager,
             episode_id=current_episode_id
@@ -886,7 +821,6 @@ class DialogueManagerV2:
             f"pivot_detected={ehg_signal.pivot_detected}"
         )
         
-        # V3: Assess episode safety from EHG signal
         safety_status = assess_episode_safety(ehg_signal)
         logger.debug(f"Episode safety status: {safety_status.value}")
         
@@ -894,10 +828,8 @@ class DialogueManagerV2:
         # If ambiguity detected, generate narrowing prompt and block RP commit
         # Stay in MODE_EPISODE_EXTRACTION, re-ask pending question
         if safety_status != EpisodeSafetyStatus.SAFE_TO_EXTRACT:
-            # Generate coercion prompt
             coercion_prompt = build_episode_narrowing_prompt(safety_status)
             
-            # Append the pending question to redirect focus
             system_output = f"{coercion_prompt}\n\nFor the current problem, {pending_question['question']}"
             
             logger.warning(
@@ -934,99 +866,45 @@ class DialogueManagerV2:
                 previous_mode=previous_mode
             )
         
-        # Safety status is SAFE_TO_EXTRACT - proceed with normal flow
         logger.debug("Episode safety check passed - proceeding with extraction")
         
-        # Get next questions for multi-question metadata window (returns List[QuestionOutput])
-        next_questions_output = self.selector.get_next_n_questions(
-            current_question_id=pending_question['id'],
-            n=3
-        )
-        
-        # Get symptom category questions (now returns List[QuestionOutput])
-        symptom_category_questions = self._get_symptom_category_questions()
-        
-        # Build combined additional_fields (all QuestionOutput objects)
-        all_additional_questions = []
-        if next_questions_output:
-            all_additional_questions.extend(next_questions_output)
-        if symptom_category_questions:
-            all_additional_questions.extend(symptom_category_questions)
-        
-        # Convert pending_question dict back to QuestionOutput for prompt building
         pending_question_output = self._dict_to_question_output(pending_question)
         
-        # Build extraction prompt
+        # V5: Extract fields using new orchestrator interface
+        # Response Parser handles all extraction logic internally
+        # Dialogue Manager receives only Dict[str, ValueEnvelope]
         try:
-            # Create PromptSpec from QuestionOutput (V4)
-            prompt_spec = create_prompt_spec_from_question_output(
+            fields = self.parser.extract(
                 question=pending_question_output,
-                mode=PromptMode.PRIMARY,
-                next_questions=all_additional_questions if all_additional_questions else None
-            )
-            
-            # Build prompt text
-            prompt_text = self.prompt_builder.build(prompt_spec, user_input)
-            
-            logger.debug(
-                f"Built prompt for {pending_question['id']} "
-                f"({len(all_additional_questions)} additional fields)"
-            )
-            
-        except PromptBuildError as e:
-            # Prompt construction failed - this is a critical error
-            # Let it propagate to crash the system
-            logger.error(f"PromptBuilder failed for {pending_question['id']}: {e}")
-            raise
-        
-        # Parse response with pre-built prompt
-        try:
-            parse_result = self.parser.parse(
-                prompt_text=prompt_text,
-                patient_response=user_input,
-                expected_field=pending_question['field'],
+                user_text=user_input,
                 turn_id=f"turn_{turn_count + 1:03d}"
             )
             
-            outcome = parse_result['outcome']
-            fields = parse_result['fields']
-            parse_metadata = parse_result['parse_metadata']
+            # V5: Determine outcome from returned fields
+            # (Response Parser no longer returns outcome - derive from fields)
+            if pending_question['field'] in fields:
+                outcome = 'success'
+            elif len(fields) > 0:
+                outcome = 'partial_success'
+            else:
+                outcome = 'unclear'
             
             logger.info(
-                f"Parsed: id={pending_question['id']}, outcome={outcome}, "
+                f"Extracted: id={pending_question['id']}, outcome={outcome}, "
                 f"fields={len(fields)}"
             )
             
         except Exception as e:
-            logger.error(f"Parser crashed: {e}")
+            logger.error(f"Extraction failed: {e}")
             errors.append({
-                'context': 'parse',
+                'context': 'extract',
                 'error': str(e),
                 'question_id': pending_question['id']
             })
             
-            # Create empty parse result
-            outcome = 'generation_failed'
+            outcome = 'extraction_failed'
             fields = {}
-            parse_metadata = {
-                'expected_field': pending_question.get('field', 'unknown'),
-                'question_id': pending_question['id'],
-                'turn_id': f"turn_{turn_count + 1:03d}",
-                'timestamp': datetime.now().isoformat(),
-                'error_message': str(e),
-                'error_type': type(e).__name__,
-                'unexpected_fields': [],
-                'validation_warnings': [],
-                'normalization_applied': []
-            }
-            parse_result = {
-                'outcome': outcome,
-                'fields': fields,
-                'parse_metadata': parse_metadata
-            }
         
-        # Route extracted fields
-        # V3-GUARD: Convert mode to enum and pass to routing for commit guard
         current_mode = ConversationMode(state_manager.conversation_mode)
         
         unmapped = self._route_extracted_fields(
@@ -1036,9 +914,7 @@ class DialogueManagerV2:
             mode=current_mode
         )
         
-        # Mark questions satisfied based on extracted fields
-        # This happens BEFORE marking the pending question as answered
-        # because satisfaction is about data obtained, not about which question was asked
+        # Mark questions satisfied (fields extracted although question not asked)
         for field_name in fields.keys():
             if field_name in self._field_to_questions:
                 for q_id in self._field_to_questions[field_name]:
@@ -1048,8 +924,7 @@ class DialogueManagerV2:
                         f"satisfied via field '{field_name}'"
                     )
         
-        # Mark pending question as answered (separate from satisfaction)
-        # This tracks which questions were explicitly asked
+        # Mark pending question as explicitly answered (separate from satisfaction)
         state_manager.mark_question_answered(current_episode_id, pending_question['id'])
         
         # Check triggers and block completion
@@ -1070,7 +945,6 @@ class DialogueManagerV2:
             }
         )
         
-        # Get next question (returns QuestionOutput or None)
         episode_data = state_manager.get_episode_for_selector(current_episode_id)
         next_question = self.selector.get_next_question(episode_data)
         
@@ -1087,7 +961,7 @@ class DialogueManagerV2:
                 pending_question=self.TRANSITION_QUESTION,
                 errors=errors,
                 debug={
-                    'parser_output': parse_result,
+                    'fields_extracted': list(fields.keys()),
                     'episode_complete': True
                 },
                 consultation_complete=False,
@@ -1108,7 +982,7 @@ class DialogueManagerV2:
                 awaiting_episode_transition=False,
                 pending_question=next_question_dict,
                 errors=errors,
-                debug={'parser_output': parse_result},
+                debug={'fields_extracted': list(fields.keys())},
                 consultation_complete=False,
                 previous_mode=previous_mode
             )
@@ -1126,54 +1000,28 @@ class DialogueManagerV2:
     ) -> TurnResult:
         """
         Process answer to episode transition question
-        
-        Args:
-            user_input: Patient response
-            state_manager: Rehydrated state manager
-            consultation_id: Consultation ID
-            turn_count: Current turn count
-            current_episode_id: Current episode ID
-            pending_question: Episode transition question
-            errors: List of errors from previous turns
-            previous_mode: Previous conversation mode (V3)
-            
-        Returns:
-            TurnResult with new episode question or finalization
         """
-        # Parse transition response (no next_questions for meta-question)
         try:
-            # Convert TRANSITION_QUESTION dict to QuestionOutput for prompt building (V4)
+            # Convert TRANSITION_QUESTION dict to QuestionOutput for extraction
             transition_question_output = self._dict_to_question_output(self.TRANSITION_QUESTION)
             
-            # Build extraction prompt for transition question
-            prompt_spec = create_prompt_spec_from_question_output(
+            fields = self.parser.extract(
                 question=transition_question_output,
-                mode=PromptMode.PRIMARY,
-                next_questions=None  # No metadata window for transition
-            )
-            
-            prompt_text = self.prompt_builder.build(prompt_spec, user_input)
-            
-            # Parse with pre-built prompt
-            parse_result = self.parser.parse(
-                prompt_text=prompt_text,
-                patient_response=user_input,
-                expected_field=self.TRANSITION_QUESTION['field'],
+                user_text=user_input,
                 turn_id=f"turn_{turn_count + 1:03d}"
             )
             
-            outcome = parse_result['outcome']
-            fields = parse_result['fields']
+            if self.TRANSITION_QUESTION['field'] in fields:
+                outcome = 'success'
+            elif len(fields) > 0:
+                outcome = 'partial_success'
+            else:
+                outcome = 'unclear'
             
         except Exception as e:
-            logger.error(f"Transition parse failed: {e}")
+            logger.error(f"Transition extraction failed: {e}")
             outcome = 'unclear'
             fields = {}
-            parse_result = {
-                'outcome': outcome,
-                'fields': fields,
-                'parse_metadata': {}
-            }
         
         # Check if we got a clear answer
         field = self.TRANSITION_QUESTION['field']
@@ -1208,7 +1056,7 @@ class DialogueManagerV2:
                         pending_question=None,
                         errors=errors,
                         debug={
-                            'parser_output': parse_result,
+                            'fields_extracted': list(fields.keys()),
                             'new_episode': new_episode_id,
                             'error': 'no_questions_for_new_episode'
                         },
@@ -1230,7 +1078,7 @@ class DialogueManagerV2:
                     pending_question=first_question_dict,
                     errors=errors,
                     debug={
-                        'parser_output': parse_result,
+                        'fields_extracted': list(fields.keys()),
                         'new_episode': new_episode_id
                     },
                     consultation_complete=False,
@@ -1249,7 +1097,7 @@ class DialogueManagerV2:
                     pending_question=None,
                     errors=errors,
                     debug={
-                        'parser_output': parse_result,
+                        'fields_extracted': list(fields.keys()),
                         'no_more_episodes': True
                     },
                     consultation_complete=True,
@@ -1270,7 +1118,7 @@ class DialogueManagerV2:
                 pending_question=self.TRANSITION_QUESTION,
                 errors=errors,
                 debug={
-                    'parser_output': parse_result,
+                    'fields_extracted': list(fields.keys()),
                     'unclear_transition': True
                 },
                 consultation_complete=False,
@@ -1286,25 +1134,6 @@ class DialogueManagerV2:
     ) -> Dict[str, Any]:
         """
         Route extracted fields to episode or shared storage.
-        
-        V3-GUARD: Centralizes all RP ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ State writes behind commit guard.
-        
-        Routing rules:
-        - Episode fields: Prefix-based + guard-gated
-        - Shared fields: Prefix-based + collection detection
-        - Unknown fields: Quarantined in return value
-        
-        Commit semantics:
-        - Shared fields: Always written (no guard)
-        - Episode fields: Written only if commit_allowed(mode)
-        - Blocked episode fields: Logged, not written
-        
-        Args:
-            episode_id: Target episode for episode-scoped fields
-            extracted: Parsed fields from Response Parser
-            state_manager: StateManager instance
-            mode: Current conversation mode (V3-GUARD)
-            
         Returns:
             dict: Unmapped fields (quarantined, not written)
         """
@@ -1398,11 +1227,6 @@ class DialogueManagerV2:
     def _build_routing_debug(self) -> list:
         """
         Build routing debug information from last turn.
-        
-        Returns routing decisions for debug panel display.
-        
-        Returns:
-            list: Routing info dicts with field, value, resolution, episode_id, rule, recognized
         """
         # Import classifier data (flat imports for server)
         from backend.utils.episode_classifier import EPISODE_PREFIXES, SHARED_PREFIXES, COLLECTION_FIELDS
@@ -1451,13 +1275,6 @@ class DialogueManagerV2:
     ) -> Dict[str, Any]:
         """
         Generate final JSON and summary outputs
-        
-        Args:
-            state_snapshot: Final canonical consultation state snapshot
-            output_dir: Directory for output files
-            
-        Returns:
-            dict: Paths to generated files and metadata
         """
         import os
         
